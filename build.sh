@@ -9,12 +9,6 @@ optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
 tfm_dir=${code_dir}/trusted-firmware-m
 tfm_fwu_dir=${code_dir}/tfm-fwu
 
-# modules
-#FreeRTOS=y
-#if [[ "${FreeRTOS}" = "y" ]]; then
-#fi
-#read -p "Press enter to continue"
-
 function do_add_swap()
 {
     # Add swap for memory
