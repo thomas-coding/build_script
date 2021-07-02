@@ -212,9 +212,9 @@ function do_get_and_build_optee_armv7()
 
     mkdir -p ${optee_armv7_dir}
     cd ${optee_armv7_dir}
-    repo init -u https://github.com/OP-TEE/manifest.git -m default.xml -b 3.12.0
-    cd ${optee_armv7_dir}/build
+    echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m default.xml -b 3.12.0
     repo sync
+    cd ${optee_armv7_dir}/build
     make toolchains
     make
 
