@@ -105,9 +105,9 @@ function do_get_and_build_freertos()
     cd ${freertos_dir}/FreeRTOS
 
     # creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/freertos/freertos_build.sh  ${freertos_dir}/FreeRTOS/build.sh
-    cp ${shell_folder}/freertos/freertos_runqemu.sh  ${freertos_dir}/FreeRTOS/runqemu.sh
-    cp ${shell_folder}/freertos/freertos_rungdb.sh  ${freertos_dir}/FreeRTOS/rungdb.sh
+    cp ${shell_folder}/modules/freertos/freertos_build.sh  ${freertos_dir}/FreeRTOS/build.sh
+    cp ${shell_folder}/modules/freertos/freertos_runqemu.sh  ${freertos_dir}/FreeRTOS/runqemu.sh
+    cp ${shell_folder}/modules/freertos/freertos_rungdb.sh  ${freertos_dir}/FreeRTOS/rungdb.sh
 
     #build
     ./build.sh
@@ -127,9 +127,9 @@ function do_get_and_build_tfm()
     python3 -m pip install -r ${tfm_dir}/tools/requirements.txt
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/tfm/tfm_build.sh  ${tfm_dir}/build.sh
-    cp ${shell_folder}/tfm/tfm_runqemu.sh  ${tfm_dir}/runqemu.sh
-    cp ${shell_folder}/tfm/tfm_rungdb.sh  ${tfm_dir}/rungdb.sh
+    cp ${shell_folder}/modules/tfm/tfm_build.sh  ${tfm_dir}/build.sh
+    cp ${shell_folder}/modules/tfm/tfm_runqemu.sh  ${tfm_dir}/runqemu.sh
+    cp ${shell_folder}/modules/tfm/tfm_rungdb.sh  ${tfm_dir}/rungdb.sh
 
     #build
     ./build.sh
@@ -173,9 +173,9 @@ function do_get_and_build_tfm_fwu()
     ./toflash
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/tfm_fwu/tfm_build.sh  ${tfm_fwu_dir}/build.sh
-    cp ${shell_folder}/tfm_fwu/tfm_runqemu.sh  ${tfm_fwu_dir}/runqemu.sh
-    cp ${shell_folder}/tfm_fwu/tfm_rungdb.sh  ${tfm_fwu_dir}/rungdb.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_build.sh  ${tfm_fwu_dir}/build.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_runqemu.sh  ${tfm_fwu_dir}/runqemu.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_rungdb.sh  ${tfm_fwu_dir}/rungdb.sh
 
     #run qemu
     #cd ${tfm_fwu_dir}/projects/qemu-tfm
@@ -199,9 +199,9 @@ function do_get_and_build_optee_armv8()
     make
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/optee/optee_build.sh  ${optee_armv8_dir}/build.sh
-    cp ${shell_folder}/optee/optee_runqemu.sh  ${optee_armv8_dir}/runqemu.sh
-    cp ${shell_folder}/optee/optee_rungdb.sh  ${optee_armv8_dir}/rungdb.sh
+    cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv8_dir}/build.sh
+    cp ${shell_folder}/modules/optee/optee_runqemu.sh  ${optee_armv8_dir}/runqemu.sh
+    cp ${shell_folder}/modules/optee/optee_rungdb.sh  ${optee_armv8_dir}/rungdb.sh
 }
 
 function do_get_and_build_optee_armv7()
@@ -219,9 +219,9 @@ function do_get_and_build_optee_armv7()
     make
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/optee/optee_build.sh  ${optee_armv7_dir}/build.sh
-    cp ${shell_folder}/optee/optee_runqemu.sh  ${optee_armv7_dir}/runqemu.sh
-    cp ${shell_folder}/optee/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
+    cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv7_dir}/build.sh
+    cp ${shell_folder}/modules/optee/optee_runqemu.sh  ${optee_armv7_dir}/runqemu.sh
+    cp ${shell_folder}/modules/optee/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
 }
 
 function usage()
