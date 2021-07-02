@@ -157,25 +157,14 @@ function do_get_and_build_tfm_fwu()
     ../configure --target-list=aarch64-softmmu,arm-softmmu
     make
 
-    #build tfm
-    cd ${tfm_fwu_dir}/projects/tfm-fwu
-    cmake -S . -B cmake_build -DTFM_PLATFORM=mps2/an521 -DTFM_TOOLCHAIN_FILE=toolchain_GNUARM.cmake
-    cmake --build cmake_build -- install
-
-    #build freerots
-    cd ${tfm_fwu_dir}/projects/freertos-tfm-fwu/freertos_kernel/portable/ThirdParty/GCC/ARM_CM33_TFM
-    make
-
-    #build flash
-    cd ${tfm_fwu_dir}/projects/tfm-fwu
-    ./sign.sh
-    gcc -g -o toflash toflash.c
-    ./toflash
-
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_build.sh  ${tfm_fwu_dir}/build.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_runqemu.sh  ${tfm_fwu_dir}/runqemu.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_rungdb.sh  ${tfm_fwu_dir}/rungdb.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_build.sh  ${tfm_fwu_dir}/projects/build.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_runqemu.sh  ${tfm_fwu_dir}/projects/runqemu.sh
+    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_rungdb.sh  ${tfm_fwu_dir}/projects/rungdb.sh
+
+    #build
+    cd ${tfm_fwu_dir}/projects/
+    ./build.sh
 
     #run qemu
     #cd ${tfm_fwu_dir}/projects/qemu-tfm
