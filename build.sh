@@ -24,8 +24,8 @@ if [[ "${is_root}" = "y" ]]; then
     trusty_dir=${code_dir}/trusty
 else
     code_dir=${shell_folder}/../code
-    qemu_dir=${shell_folder}/../software/qemu
-    toolchains_dir=${shell_folder}/../.toolchains
+    toolchains_dir=~/.toolchains
+    qemu_dir=${toolchains_dir}/qemu
     freertos_dir=${code_dir}/freertos
     optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
     optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
@@ -99,7 +99,7 @@ function do_install_qemu()
     tar -xvf qemu-6.0.0.tar.xz
     cd qemu-6.0.0
     ./configure --target-list=aarch64-softmmu,arm-softmmu --enable-debug
-    make
+    make -j `nproc`
     rm -rf qemu-6.0.0.tar.xz
 }
 
@@ -210,7 +210,7 @@ function do_get_and_build_tfm_fwu()
     mkdir build
     cd ${tfm_fwu_dir}/projects/qemu-tfm/build
     ../configure --target-list=aarch64-softmmu,arm-softmmu
-    make
+    make -j `nproc`
 
     #creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_build.sh  ${tfm_fwu_dir}/projects/build.sh
@@ -241,7 +241,7 @@ function do_get_and_build_optee_armv8()
     cd ${optee_armv8_dir}/build
 
     make toolchains
-    make
+    make -j `nproc`
 
     #creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv8_dir}/build.sh
@@ -262,7 +262,7 @@ function do_get_and_build_optee_armv7()
     repo sync
     cd ${optee_armv7_dir}/build
     make toolchains
-    make
+    make -j `nproc`
 
     #creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv7_dir}/build.sh
@@ -307,10 +307,14 @@ function usage()
 function do_test()
 {
     echo "test code"
+    sleep 10s
 }
 
 #parse option
+start_time=${SECONDS}
+module=
 for arg in "$@"; do
+    module+=$arg 
     case $arg in
         --test)
             do_test
@@ -367,3 +371,8 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+finish_time=${SECONDS}
+duration=$((${finish_time}-${start_time}))
+elapsed_time="$((${duration} / 60))m $((${duration} % 60))s"
+echo "do ${module} use: ${elapsed_time}"
