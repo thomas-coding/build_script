@@ -1,49 +1,84 @@
 #!/bin/bash
 shell_folder=$(cd "$(dirname "$0")";pwd)
-qemu_dir=/root/software/qemu
-toolchains_dir=/root/.toolchains
-code_dir=/root/code
-freertos_dir=${code_dir}/freertos
-optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
-optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
-tfm_dir=${code_dir}/trusted-firmware-m
-tfm_fwu_dir=${code_dir}/tfm-fwu
+
+
+# For aliyun, user is root, otherwise, maybe it is owner's compile server
+# Aliyun, default it is empty, create file in system
+# Compile server, build it in current folder
+
+if [[ `whoami` = "root" ]]; then
+    is_root=y
+else
+    is_root=n
+fi
+
+if [[ "${is_root}" = "y" ]]; then
+    qemu_dir=/root/software/qemu
+    toolchains_dir=/root/.toolchains
+    code_dir=/root/code
+    freertos_dir=${code_dir}/freertos
+    optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
+    optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
+    tfm_dir=${code_dir}/trusted-firmware-m
+    tfm_fwu_dir=${code_dir}/tfm-fwu
+    trusty_dir=${code_dir}/trusty
+else
+    code_dir=${shell_folder}/code
+    qemu_dir=${shell_folder}/software/qemu
+    toolchains_dir=${shell_folder}/.toolchains
+    freertos_dir=${code_dir}/freertos
+    optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
+    optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
+    tfm_dir=${code_dir}/trusted-firmware-m
+    tfm_fwu_dir=${code_dir}/tfm-fwu
+    trusty_dir=${code_dir}/trusty
+fi
+
 
 function do_add_swap()
 {
-    # Add swap for memory
-    echo "Add swap ..."
-    dd if=/dev/zero of=/root/swap bs=1024 count=4096000
-    chmod 0600 /root/swap
-    sudo swapoff -a
-    sudo mkswap /root/swap
-    sudo swapon /root/swap
-    free m
+    # Add swap for memory for aliyun, because of aliyun server is low memory(1G)
+    if [[ "${is_root}" = "y" ]]; then
+        echo "Add swap ..."
+        dd if=/dev/zero of=/root/swap bs=1024 count=4096000
+        chmod 0600 /root/swap
+        sudo swapoff -a
+        sudo mkswap /root/swap
+        sudo swapon /root/swap
+        free m
+    fi
 }
 export -f do_add_swap
 
 function do_install_package()
 {
     # update 
-    apt-get update
+    sudo apt-get update
 
     # install repo
-    mkdir ~/bin
-    curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-    chmod a+x ~/bin/repo
-    echo "export PATH=~/bin:$PATH" >> ~/.bashrc
-    source ~/.bashrc
+    if [[ ! -e ~/bin/repo ]]; then
+        if [[ ! -d ~/bin ]]; then
+            mkdir ~/bin
+        fi
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "export PATH=~/bin:$PATH" >> ~/.bashrc
+        source ~/.bashrc
+    fi
+
 
     # install package
     echo "install package ..."
-    apt-get -y install git ninja-build android-tools-adb android-tools-fastboot autoconf \
+    sudo apt-get -y install git ninja-build android-tools-adb android-tools-fastboot autoconf \
     automake bc bison build-essential ccache cscope curl device-tree-compiler \
     expect flex ftp-upload gdisk iasl libattr1-dev libcap-dev \
     libfdt-dev libftdi-dev libglib2.0-dev libhidapi-dev libncurses5-dev \
     libpixman-1-dev libssl-dev libtool make \
     mtools netcat python-crypto python3-crypto python-pyelftools \
     python3-pycryptodome python3-pyelftools python-serial python3-serial \
-    rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake
+    rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
+    libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
+    libssl-dev bison gcc-multilib zip
     #echo "y" | sudo apt-get install git
 
     # config git
@@ -56,7 +91,7 @@ function do_install_qemu()
     # get and install qemu
     echo "install qemu ..."
     if [[ -d ${qemu_dir} ]]; then
-        rm -rf ${qemu_dir}
+        return
     fi
     mkdir -p ${qemu_dir}
     wget --directory-prefix=${qemu_dir} https://download.qemu.org/qemu-6.0.0.tar.xz
@@ -65,30 +100,43 @@ function do_install_qemu()
     cd qemu-6.0.0
     ./configure --target-list=aarch64-softmmu,arm-softmmu --enable-debug
     make
+    rm -rf qemu-6.0.0.tar.xz
 }
 
 function do_install_toolchain()
 {
     # install toolchain
     echo "install toolchains ..."
-    if [[ -d ${toolchains_dir} ]]; then
-        rm -rf ${toolchains_dir}
+    if [[ ! -d ${toolchains_dir} ]]; then
+        mkdir ${toolchains_dir}
     fi
-    mkdir ${toolchains_dir}
-    wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-    wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+
     cd ${toolchains_dir}
-    tar -xvf gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-    tar -xvf gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+
+    if [[ ! -d gcc-arm-none-eabi-10-2020-q4-major ]]; then
+        wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
+        tar -xvf gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
+    fi
+
+    if [[ ! -d gcc-arm-none-eabi-9-2019-q4-major ]]; then
+        wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+        tar -xvf gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+    fi
+
+    #delete tar file
+    rm -rf *.tar.bz*
 }
 
 function do_install_cmake()
 {
     cd ${toolchains_dir}
-    wget  https://github.com/Kitware/CMake/releases/download/v3.20.5/cmake-3.20.5-linux-x86_64.sh
-    chmod +x cmake-3.20.5-linux-x86_64.sh
-    mkdir cmake-3.20.5-linux-x86_64
-    ./cmake-3.20.5-linux-x86_64.sh --skip-license --prefix=./cmake-3.20.5-linux-x86_64
+    if [[ ! -d cmake-3.20.5-linux-x86_64 ]]; then
+        wget  https://github.com/Kitware/CMake/releases/download/v3.20.5/cmake-3.20.5-linux-x86_64.sh
+        chmod +x cmake-3.20.5-linux-x86_64.sh
+        mkdir cmake-3.20.5-linux-x86_64
+        ./cmake-3.20.5-linux-x86_64.sh --skip-license --prefix=./cmake-3.20.5-linux-x86_64
+        rm -rf cmake-3.20.5-linux-x86_64.sh
+    fi
 }
 
 function do_get_and_build_freertos()
@@ -96,7 +144,8 @@ function do_get_and_build_freertos()
     # freerots
     echo "install freertos ..."
     if [[ -d ${freertos_dir} ]]; then
-        rm -rf ${freertos_dir}
+        echo "freertos already exist ..."
+        return
     fi
 
     mkdir -p ${freertos_dir}
@@ -117,7 +166,12 @@ function do_get_and_build_tfm()
 {
     # TFM
     if [[ -d ${tfm_dir} ]]; then
-        rm -rf ${tfm_dir}
+        echo "tfm already exist ..."
+        return
+    fi
+
+    if [[ ! -d ${code_dir} ]]; then
+        mkdir -p ${code_dir}
     fi
 
     cd ${code_dir}
@@ -139,7 +193,8 @@ function do_get_and_build_tfm_fwu()
 {
 
     if [[ -d ${tfm_fwu_dir} ]]; then
-        rm -rf ${tfm_fwu_dir}
+        echo "tfm fwu already exist ..."
+        return
     fi
     
     mkdir -p ${tfm_fwu_dir}/projects
@@ -174,7 +229,8 @@ function do_get_and_build_tfm_fwu()
 function do_get_and_build_optee_armv8()
 {
     if [[ -d ${optee_armv8_dir} ]]; then
-        rm -rf ${optee_armv8_dir}
+        echo "optee armv8 already exist ..."
+        return
     fi
 
     mkdir -p ${optee_armv8_dir}
@@ -196,7 +252,8 @@ function do_get_and_build_optee_armv8()
 function do_get_and_build_optee_armv7()
 {
     if [[ -d ${optee_armv7_dir} ]]; then
-        rm -rf ${optee_armv7_dir}
+        echo "optee armv7 already exist ..."
+        return
     fi
 
     mkdir -p ${optee_armv7_dir}
@@ -213,10 +270,29 @@ function do_get_and_build_optee_armv7()
     cp ${shell_folder}/modules/optee/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
 }
 
+function do_get_and_build_trusty()
+{
+    if [[ -d ${trusty_dir} ]]; then
+        echo "trusty already exist ..."
+        return
+    fi
+
+    mkdir -p ${trusty_dir}
+    cd ${trusty_dir}
+    echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
+    repo sync
+
+    #creat build.sh runqemu.sh rungdb.sh
+    cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
+    cp ${shell_folder}/modules/trusty/trusty_runqemu.sh  ${trusty_dir}/runqemu.sh
+    cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
+}
+
 function usage()
 {
     echo "build <option>"
     echo "    --a:              Build all"
+    echo "    --toolchains:     install toolchains, cmake"
     echo "    --env:            Setup environment, include packages , toolchains cmake"
     echo "    --qemu:           Build qemu"
     echo "    --tfm:            Build tfm"
@@ -224,12 +300,21 @@ function usage()
     echo "    --opteev8:        Build optee base on armv8"
     echo "    --opteev7:        Build optee base on armv7"
     echo "    --freertos:       Build freertos"
+    echo "    --trusty:         Build trusty"
     echo "    -h|--help:        Show this help information"
+}
+
+function do_test()
+{
+    echo "test code"
 }
 
 #parse option
 for arg in "$@"; do
     case $arg in
+        --test)
+            do_test
+            shift;;
         --a)
             do_add_swap
             do_install_package
@@ -241,10 +326,15 @@ for arg in "$@"; do
             do_get_and_build_tfm_fwu
             do_get_and_build_optee_armv8
             do_get_and_build_optee_armv7
+            do_get_and_build_trusty
             shift;;
         --env)
             do_add_swap
             do_install_package
+            do_install_toolchain
+            do_install_cmake
+            shift;;
+        --toolchains)
             do_install_toolchain
             do_install_cmake
             shift;;
@@ -266,10 +356,13 @@ for arg in "$@"; do
         --freertos)
             do_get_and_build_freertos
             shift;;
+        --trusty)
+            do_get_and_build_trusty
+            shift;;
         -h|--help)
             usage
             exit 0
-            shift;;
+            shift;;           
         *)
             ;;
     esac
