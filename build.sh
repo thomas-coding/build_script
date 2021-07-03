@@ -23,9 +23,9 @@ if [[ "${is_root}" = "y" ]]; then
     tfm_fwu_dir=${code_dir}/tfm-fwu
     trusty_dir=${code_dir}/trusty
 else
-    code_dir=${shell_folder}/code
-    qemu_dir=${shell_folder}/software/qemu
-    toolchains_dir=${shell_folder}/.toolchains
+    code_dir=${shell_folder}/../code
+    qemu_dir=${shell_folder}/../software/qemu
+    toolchains_dir=${shell_folder}/../.toolchains
     freertos_dir=${code_dir}/freertos
     optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
     optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
