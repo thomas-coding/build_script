@@ -288,9 +288,13 @@ function do_get_and_build_trusty()
     mkdir -p ${trusty_dir}
     cd ${trusty_dir}
     echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
+    # Change old manifest for compile ok
+    cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
+    repo init -m manifest_0704.xml
+
     repo sync -j1
 
-    #creat build.sh runqemu.sh rungdb.sh
+    # Creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
     cp ${shell_folder}/modules/trusty/trusty_runqemu.sh  ${trusty_dir}/runqemu.sh
     cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
