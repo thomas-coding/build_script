@@ -300,6 +300,7 @@ function do_create_git_repository()
 {
     git init --bare /gitshop/repository1.git
     echo "Use 'git clone root@8.210.111.180:/gitshop/repository1.git' to get repository"
+    # no password: client pubkey -> server authed pubkey
     # client pubkey: ~/.ssh/id_rsa.pub
     # server pubkey: ~/.ssh/authorized_keys
 }
