@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote fetch=".." name="aosp" review="https://android-review.googlesource.com/"/>
+  
+  <default remote="aosp" revision="master" sync-j="4"/>
+  
+  <project dest-branch="android-trusty-5.4" groups="trusty" name="kernel/common" path="external/linux" revision="de3183e2734ea1f4ce78983fcfbad20f7e4d0a0d"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/boringssl" path="external/boringssl" revision="b313bb57572bcf559b70f17d74c1e7f3f45b8d28"/>
+  <project groups="trusty" name="platform/external/capstone" path="external/capstone" revision="f1f1cbc054db7021d4167a96b55783e087e1b7b4"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/dtc" path="external/dtc" revision="88ad004dd58750b779e90d27be0de1a1421995a6"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/freetype" path="external/freetype" revision="7f4f3d656a14dc009d261ac06db3a247455e556e"/>
+  <project groups="trusty" name="platform/external/googletest" path="external/googletest" revision="f93adba5c98356dfee63567b65261161c219ad93"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/libcppbor" path="external/libcppbor" revision="382930dc903553c7cc81ee006260ed319f4bb849"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/libcxx" path="external/libcxx" revision="e12048675382cd2706651be5a76b209b330966f6"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/libcxxabi" path="external/libcxxabi" revision="98c858f4b1e627462aef2d375f9fba34708aea69"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/nanopb-c" path="external/nanopb-c" revision="9f40c4e3a0b2b5544d814c932e1f2988c8db8e9f"/>
+  <project dest-branch="master" groups="trusty" name="platform/external/protobuf" path="external/protobuf" revision="9eb1e691fb5095d4fcd71e9d4a1b2483e2c7a3f3"/>
+  <project dest-branch="master" groups="trusty" name="platform/hardware/libhardware" path="hardware/libhardware" revision="a3888bdcb9c92d93c10eb64b0d318f9e66046c83"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/build-tools" path="prebuilts/build-tools" revision="2bf81b65afb07c6416d7ea5056cb7229c74e55fc"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/clang/host/linux-x86" path="prebuilts/clang/host/linux-x86" revision="55c52cdebd0d518e87324bb43b4e9ecd80cb5de9"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.8" path="prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.8" revision="14606fb850d5dd0de14dee1c42453cf8889b3204"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9" path="prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9" revision="98dce673ad97a9640c5d90bbb1c718e75c21e071"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8" path="prebuilts/gcc/linux-x86/arm/arm-eabi-4.8" revision="26e93f6af47f7bd3a9beb5c102a5f45e19bfa38a"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9" path="prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9" revision="3e1d1fd459f5bb401479602c44448764f54ffe57"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="platform/prebuilts/gcc/linux-x86/x86/x86_64-linux-android-4.9" path="prebuilts/gcc/linux-x86/x86/x86_64-linux-android-4.9" revision="c422f3cf5316c1b491db8b7c7ba7a2b693a56bc8"/>
+  <project clone-depth="1" dest-branch="trusty" groups="trusty" name="platform/prebuilts/libprotobuf/linux" path="prebuilts/libprotobuf" revision="10812113a483a5ea697c65e1135cb543532141b5"/>
+  <project dest-branch="master" groups="trusty" name="platform/system/gatekeeper" path="system/gatekeeper" revision="8b274d9647fafefe8b94f750aab179ca4514fda3"/>
+  <project dest-branch="master" groups="trusty" name="platform/system/iot/attestation" path="system/iot/attestation" revision="1ce107c299a915d4e4022660ec9be65cb65a653c"/>
+  <project dest-branch="master" groups="trusty" name="platform/system/keymaster" path="system/keymaster" revision="b40535e9d28e489dbe7af82e97507541779cd446"/>
+  <project dest-branch="master" groups="trusty" name="platform/system/teeui" path="system/teeui" revision="b136e32723d61ca31c369a0530bd2cb637bb23c3"/>
+  <project dest-branch="master" groups="trusty" name="platform/tools/repohooks" path="tools/repohooks" revision="f1e0b3bf4f30cf004fdd6f814ddc4712a3f8ee8c"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/avb" path="trusty/user/app/avb" revision="04886992101077cd4c76acc72f9f1775c6b93d40"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/confirmationui" path="trusty/user/app/confirmationui" revision="74c2a1f474341798e2be6e3356a616a69334a8c3"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/gatekeeper" path="trusty/user/app/gatekeeper" revision="8d60f0f76fd9d2587a9547013283affb002732a2"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/keymaster" path="trusty/user/app/keymaster" revision="f8c4f108b0ba904ccdf98c75191039a3aef449a5"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/sample" path="trusty/user/app/sample" revision="6a7b54e81c4b9d7db1910d485944eb3cec66302e"/>
+  <project dest-branch="master" groups="trusty" name="trusty/app/storage" path="trusty/user/app/storage" revision="0e5d01f30cadfe540222936e35bf4940552eac8a"/>
+  <project dest-branch="master" groups="trusty" name="trusty/device/arm/generic-arm64" revision="639c38fd9829f72336bfd70e8e61cc2fc48306fb"/>
+  <project dest-branch="master" groups="trusty" name="trusty/device/arm/vexpress-a15" revision="acc5296c8a69789f57338f5b4dcbc4ff8c271c6a"/>
+  <project dest-branch="master" groups="trusty" name="trusty/device/nxp/imx7d" revision="b89ff2015485562c65efe3792bc4da3c7ada15fc"/>
+  <project dest-branch="master" groups="trusty" name="trusty/device/x86/generic-x86_64" revision="7f321c48df4d31bc06347707a11c21a71fd41c4c"/>
+  <project dest-branch="master" groups="trusty" name="trusty/external/headers" path="external/headers" revision="fe7222b7341192abe23982374f4fc11061255965"/>
+  <project dest-branch="master" groups="trusty" name="trusty/external/musl" path="external/trusty/musl" revision="dc9bbb539b535e1e1e0f3351a6d11ac7d1e0d054"/>
+  <project dest-branch="master" groups="trusty" name="trusty/external/qemu" path="external/qemu" revision="0bfea6599b8a3ebd2c3f98bf6e0d2705e5cb609c"/>
+  <project groups="trusty" name="trusty/external/qemu-keycodemapdb" path="external/qemu-keycodemapdb" revision="10739aa26051a5d49d88132604539d3ed085e72e"/>
+  <project dest-branch="master" groups="trusty" name="trusty/external/trusted-firmware-a" path="external/arm-trusted-firmware" revision="2a78f0d698858389c0e33dbb6e3891eca2c32872"/>
+  <project dest-branch="master" groups="trusty" name="trusty/external/trusty" path="external/trusty/bootloader" revision="7c8e458bd9da1085295d8c0eb16f061697a0b42a"/>
+  <project dest-branch="master" groups="trusty" name="trusty/lib" path="trusty/user/base" revision="1d485d773ddfdfd8891ecc5cbc3585ba3cbdf08c"/>
+  <project dest-branch="master" groups="trusty" name="trusty/lk/common" path="external/lk" revision="790a32ae0e9a204086c358f1a6bb8854835255d1">
+    <copyfile dest="makefile" src="makefile"/>
+  </project>
+  <project dest-branch="master" groups="trusty" name="trusty/lk/nxp" path="trusty/hardware/nxp" revision="1507b0dcb765ec597c4b2be244167b5dc458d048"/>
+  <project dest-branch="master" groups="trusty" name="trusty/lk/trusty" path="trusty/kernel" revision="2681e764072dcd93f6920f54c5d965c3395912ec"/>
+  <project clone-depth="1" dest-branch="master" groups="trusty" name="trusty/prebuilts/aosp" revision="33e66ffe34bd6c6e4a4b2c047a58c59c5d88e4d4"/>
+  <project dest-branch="master" groups="trusty" name="trusty/vendor/google/aosp" revision="37390c2a91a16a33db5feff4b74ad6b2081ba2f5">
+    <copyfile dest="lk_inc.mk" src="lk_inc.mk"/>
+  </project>
+  
+  <repo-hooks enabled-list="pre-upload" in-project="platform/tools/repohooks"/>
+</manifest>
