@@ -293,6 +293,7 @@ function do_get_and_build_trusty()
     repo init -m manifest_0704.xml
 
     repo sync -j1
+    ./trusty/vendor/google/aosp/scripts/build.py --skip-tests --jobs 1  qemu-generic-arm64-gicv3-test-debug
 
     # Creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
