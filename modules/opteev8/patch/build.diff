@@ -1,0 +1,57 @@
+diff --git a/qemu_v8.mk b/qemu_v8.mk
+index 8a7ee48..19d7ca6 100644
+--- a/qemu_v8.mk
++++ b/qemu_v8.mk
+@@ -21,7 +21,8 @@ OPTEE_OS_PLATFORM = vexpress-qemu_armv8a
+ 
+ include common.mk
+ 
+-DEBUG ?= 1
++#DEBUG ?= 1
++DEBUG = 1
+ 
+ ################################################################################
+ # Paths to git projects and various binaries
+@@ -192,16 +193,11 @@ QEMU_SMP ?= 2
+ .PHONY: run-only
+ run-only:
+ 	ln -sf $(ROOT)/out-br/images/rootfs.cpio.gz $(BINARIES_PATH)/
+-	$(call check-terminal)
+ 	$(call run-help)
+-	$(call launch-terminal,54320,"Normal World")
+-	$(call launch-terminal,54321,"Secure World")
+-	$(call wait-for-ports,54320,54321)
+ 	cd $(BINARIES_PATH) && $(QEMU_PATH)/aarch64-softmmu/qemu-system-aarch64 \
+ 		-nographic \
+-		-serial tcp:localhost:54320 -serial tcp:localhost:54321 \
+ 		-smp $(QEMU_SMP) \
+-		-s -S -machine virt,secure=on -cpu cortex-a57 \
++		-machine virt,secure=on -cpu cortex-a57 \
+ 		-d unimp -semihosting-config enable,target=native \
+ 		-m 1057 \
+ 		-bios bl1.bin \
+@@ -210,6 +206,24 @@ run-only:
+ 		-append 'console=ttyAMA0,38400 keep_bootcon root=/dev/vda2' \
+ 		$(QEMU_EXTRA_ARGS)
+ 
++.PHONY: run-only-gdb
++run-only-gdb:
++	ln -sf $(ROOT)/out-br/images/rootfs.cpio.gz $(BINARIES_PATH)/
++	$(call run-help)
++	cd $(BINARIES_PATH) && $(QEMU_PATH)/aarch64-softmmu/qemu-system-aarch64 \
++		-nographic \
++		-smp $(QEMU_SMP) \
++		-machine virt,secure=on -cpu cortex-a57 \
++		-d unimp -semihosting-config enable,target=native \
++		-m 1057 \
++		-bios bl1.bin \
++		-initrd rootfs.cpio.gz \
++		-kernel Image -no-acpi \
++		-append 'console=ttyAMA0,38400 keep_bootcon root=/dev/vda2' \
++		$(QEMU_EXTRA_ARGS)	\
++		-append nokaslr \
++		-s -S
++
+ ifneq ($(filter check,$(MAKECMDGOALS)),)
+ CHECK_DEPS := all
+ endif

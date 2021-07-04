@@ -238,15 +238,23 @@ function do_get_and_build_optee_armv8()
     echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m qemu_v8.xml -b 3.12.0
 
     repo sync
+
+    # Patch
+    # Patch from git dir run 'git diff > xxx.diff'
+    patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
+    patch -d ${optee_armv8_dir}/optee_client -p1 < ${shell_folder}/modules/opteev8/patch/optee_client.diff
+    patch -d ${optee_armv8_dir}/optee_os -p1 < ${shell_folder}/modules/opteev8/patch/optee_os.diff
+    patch -d ${optee_armv8_dir}/trusted-firmware-a -p1 < ${shell_folder}/modules/opteev8/patch/trusted-firmware-a.diff
+
     cd ${optee_armv8_dir}/build
 
     make toolchains
     make -j `nproc`
 
-    #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv8_dir}/build.sh
-    cp ${shell_folder}/modules/optee/optee_runqemu.sh  ${optee_armv8_dir}/runqemu.sh
-    cp ${shell_folder}/modules/optee/optee_rungdb.sh  ${optee_armv8_dir}/rungdb.sh
+    # Creat build.sh runqemu.sh rungdb.sh
+    cp ${shell_folder}/modules/opteev8/optee_build.sh  ${optee_armv8_dir}/build.sh
+    cp ${shell_folder}/modules/opteev8/optee_runqemu.sh  ${optee_armv8_dir}/runqemu.sh
+    cp ${shell_folder}/modules/opteev8/optee_rungdb.sh  ${optee_armv8_dir}/rungdb.sh
 }
 
 function do_get_and_build_optee_armv7()
@@ -265,9 +273,9 @@ function do_get_and_build_optee_armv7()
     make -j `nproc`
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/optee/optee_build.sh  ${optee_armv7_dir}/build.sh
-    cp ${shell_folder}/modules/optee/optee_runqemu.sh  ${optee_armv7_dir}/runqemu.sh
-    cp ${shell_folder}/modules/optee/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
+    cp ${shell_folder}/modules/opteev7/optee_build.sh  ${optee_armv7_dir}/build.sh
+    cp ${shell_folder}/modules/opteev7/optee_runqemu.sh  ${optee_armv7_dir}/runqemu.sh
+    cp ${shell_folder}/modules/opteev7/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
 }
 
 function do_get_and_build_trusty()
@@ -307,7 +315,8 @@ function usage()
 function do_test()
 {
     echo "test code"
-    sleep 10s
+    patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
+    #sleep 10s
 }
 
 #parse option
