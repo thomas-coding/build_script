@@ -2,7 +2,8 @@
 
 function usage()
 {
-    echo "build <option>"
+    echo "usage:'./build.sh <option>' "
+    echo "option: "
     echo "    all:              Build all"
     echo "    optee:            Build optee"
     echo "    atf:              Build trusted firmware a"
@@ -52,4 +53,9 @@ done
 finish_time=${SECONDS}
 duration=$((${finish_time}-${start_time}))
 elapsed_time="$((${duration} / 60))m $((${duration} % 60))s"
-echo "build ${module} use: ${elapsed_time}"
+
+if [[ ${module}  = "" ]]; then
+    echo "unknow arg $arg, please run './build.sh -h' for more infomation "
+else
+    echo "build ${module} use: ${elapsed_time}"
+fi
