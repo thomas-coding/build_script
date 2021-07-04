@@ -78,7 +78,7 @@ function do_install_package()
     python3-pycryptodome python3-pyelftools python-serial python3-serial \
     rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
     libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
-    libssl-dev bison gcc-multilib zip
+    libssl-dev bison gcc-multilib zip openssh-server openssh-client
     #echo "y" | sudo apt-get install git
 
     # config git
@@ -288,12 +288,20 @@ function do_get_and_build_trusty()
     mkdir -p ${trusty_dir}
     cd ${trusty_dir}
     echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
-    repo sync
+    repo sync -j1
 
     #creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
     cp ${shell_folder}/modules/trusty/trusty_runqemu.sh  ${trusty_dir}/runqemu.sh
     cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
+}
+
+function do_create_git_repository()
+{
+    git init --bare /gitshop/repository1.git
+    echo "Use 'git clone root@8.210.111.180:/gitshop/repository1.git' to get repository"
+    # client pubkey: ~/.ssh/id_rsa.pub
+    # server pubkey: ~/.ssh/authorized_keys
 }
 
 function usage()
@@ -309,6 +317,7 @@ function usage()
     echo "    --opteev7:        Build optee base on armv7"
     echo "    --freertos:       Build freertos"
     echo "    --trusty:         Build trusty"
+    echo "    --git:            Create git repository 'repository1' "
     echo "    -h|--help:        Show this help information"
 }
 
@@ -371,6 +380,9 @@ for arg in "$@"; do
             shift;;
         --trusty)
             do_get_and_build_trusty
+            shift;;
+        --git)
+            do_create_git_repository
             shift;;
         -h|--help)
             usage
