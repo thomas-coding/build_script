@@ -315,8 +315,10 @@ function do_create_git_repository()
 function do_create_apache_server()
 {
     sudo apt-get -y install apache2
-    cd /var/www/html/
-    mkdir share
+    if [[ ! -d /var/www/html/share ]]; then
+        cd /var/www/html/
+        mkdir -p /var/www/html/share
+    fi
     sudo /etc/init.d/apache2 restart
     echo "Use 'http://8.210.111.180/share' to visit apache server"
 }
