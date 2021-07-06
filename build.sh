@@ -78,7 +78,7 @@ function do_install_package()
     python3-pycryptodome python3-pyelftools python-serial python3-serial \
     rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
     libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
-    libssl-dev bison gcc-multilib zip openssh-server openssh-client
+    libssl-dev bison gcc-multilib zip openssh-server openssh-client apache2
     #echo "y" | sudo apt-get install git
 
     # config git
@@ -289,8 +289,8 @@ function do_get_and_build_trusty()
     cd ${trusty_dir}
     echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
     # Change old manifest for compile ok
-    cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
-    repo init -m manifest_0704.xml
+    #cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
+    #repo init -m manifest_0704.xml
 
     repo sync -j1
     ./trusty/vendor/google/aosp/scripts/build.py --skip-tests --jobs 1  qemu-generic-arm64-gicv3-test-debug
@@ -310,6 +310,17 @@ function do_create_git_repository()
     # server pubkey: ~/.ssh/authorized_keys
 }
 
+
+
+function do_create_apache_server()
+{
+    sudo apt-get -y install apache2
+    cd /var/www/html/
+    mkdir share
+    sudo /etc/init.d/apache2 restart
+    echo "Use 'http://8.210.111.180/share' to visit apache server"
+}
+
 function usage()
 {
     echo "build <option>"
@@ -324,6 +335,7 @@ function usage()
     echo "    --freertos:       Build freertos"
     echo "    --trusty:         Build trusty"
     echo "    --git:            Create git repository 'repository1' "
+    echo "    --apache:         Create apache server "
     echo "    -h|--help:        Show this help information"
 }
 
@@ -389,6 +401,9 @@ for arg in "$@"; do
             shift;;
         --git)
             do_create_git_repository
+            shift;;
+        --apache)
+            do_create_apache_server
             shift;;
         -h|--help)
             usage
