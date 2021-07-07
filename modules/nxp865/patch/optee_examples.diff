@@ -1,0 +1,129 @@
+diff --git a/hello_world/ta/hello_world_ta.c b/hello_world/ta/hello_world_ta.c
+index 2423b30..2bbf9b8 100644
+--- a/hello_world/ta/hello_world_ta.c
++++ b/hello_world/ta/hello_world_ta.c
+@@ -94,6 +94,116 @@ void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
+ 	IMSG("Goodbye!\n");
+ }
+ 
++static void create_raw_object( void )
++{
++
++	TEE_ObjectHandle object;
++	TEE_Result res;
++	uint8_t *obj_id;
++	size_t obj_id_sz;
++	uint8_t *data;
++	size_t data_sz;
++	uint8_t *read_data;
++	size_t read_data_sz;
++	uint32_t obj_data_flag;
++	uint32_t read_bytes;
++	TEE_ObjectInfo object_info;
++
++	obj_id_sz = 10;
++	obj_id = TEE_Malloc(obj_id_sz, 0);
++
++	if (!obj_id)
++		return TEE_ERROR_OUT_OF_MEMORY;
++
++	TEE_MemFill(obj_id,0x55,obj_id_sz);
++
++	data_sz = 100;
++	data = TEE_Malloc(data_sz, 0);
++	if (!data)
++		return TEE_ERROR_OUT_OF_MEMORY;
++	TEE_MemFill(data,0x88,data_sz);
++	data[0]=0x99;
++	data[1]=0x77;
++
++	read_data_sz = 100;
++	read_data = TEE_Malloc(read_data_sz, 0);
++	if (!read_data)
++		return TEE_ERROR_OUT_OF_MEMORY;
++	TEE_MemFill(read_data,0,read_data_sz);
++
++	/*
++	 * Create object in secure storage and fill with data
++	 */
++	obj_data_flag = TEE_DATA_FLAG_ACCESS_READ |		/* we can later read the oject */
++			TEE_DATA_FLAG_SHARE_READ |
++			TEE_DATA_FLAG_ACCESS_WRITE |		/* we can later write into the object */
++			TEE_DATA_FLAG_ACCESS_WRITE_META |	/* we can later destroy or rename the object */
++			TEE_DATA_FLAG_OVERWRITE;		/* destroy existing object of same ID */
++
++	DMSG("before create file");
++	res = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE_RPMB,
++					obj_id, obj_id_sz,
++					obj_data_flag,
++					TEE_HANDLE_NULL,
++					NULL, 0,		/* we may not fill it right now */
++					&object);
++	DMSG("after create file");
++	if (res != TEE_SUCCESS) {
++		EMSG("TEE_CreatePersistentObject failed 0x%08x", res);
++		TEE_Free(obj_id);
++		TEE_Free(data);
++		return res;
++	}
++
++	DMSG("before write file");
++	res = TEE_WriteObjectData(object, data, data_sz);
++	if (res != TEE_SUCCESS) {
++		EMSG("TEE_WriteObjectData failed 0x%08x", res);
++		TEE_CloseAndDeletePersistentObject1(object);
++	}
++	DMSG("after write file");
++	TEE_CloseObject(object);
++//----------------------------------------------------------------
++	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE_RPMB,
++					obj_id, obj_id_sz,
++					TEE_DATA_FLAG_ACCESS_READ |
++					TEE_DATA_FLAG_SHARE_READ,
++					&object);
++	if (res != TEE_SUCCESS) {
++		EMSG("Failed to open persistent object, res=0x%08x", res);
++		TEE_Free(obj_id);
++		TEE_Free(data);
++		return res;
++	}
++
++	res = TEE_GetObjectInfo1(object, &object_info);
++	if (res != TEE_SUCCESS) {
++		EMSG("Failed to create persistent object, res=0x%08x", res);
++	}
++
++	DMSG("data size:%d",object_info.dataSize);
++
++	DMSG("before read file");
++	DMSG("b read_data:%d",read_data[0]);
++	res = TEE_ReadObjectData(object, read_data, read_data_sz,
++				 &read_bytes);
++	DMSG("a read_data:0x%x",read_data[0]);
++	if (res == TEE_SUCCESS)
++		DMSG("TEE_ReadObjectData ok");
++
++	if (res != TEE_SUCCESS || read_bytes != read_data_sz) {
++		EMSG("TEE_ReadObjectData failed 0x%08x, read %" PRIu32 " over %u",
++				res, read_bytes,read_data_sz);
++	}
++	DMSG("after read file");
++
++	TEE_CloseObject(object);
++	TEE_Free(obj_id);
++	TEE_Free(data);
++	return res;
++}
++
++
+ static TEE_Result inc_value(uint32_t param_types,
+ 	TEE_Param params[4])
+ {
+@@ -108,6 +218,7 @@ static TEE_Result inc_value(uint32_t param_types,
+ 		return TEE_ERROR_BAD_PARAMETERS;
+ 
+ 	IMSG("Got value: %u from NW", params[0].value.a);
++	//create_raw_object();
+ 	params[0].value.a++;
+ 	IMSG("Increase value to: %u", params[0].value.a);
+ 

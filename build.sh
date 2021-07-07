@@ -32,6 +32,7 @@ else
     tfm_dir=${code_dir}/trusted-firmware-m
     tfm_fwu_dir=${code_dir}/tfm-fwu
     trusty_dir=${code_dir}/trusty
+    nxp865_dir=${code_dir}/nxp865
 fi
 
 
@@ -301,6 +302,37 @@ function do_get_and_build_trusty()
     cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
 }
 
+function do_get_and_build_nxp865_freertos_optee()
+{
+    if [[ -d ${nxp865_dir} ]]; then
+        echo "nxp already exist ..."
+        return
+    fi
+
+    mkdir -p ${nxp865_dir}
+    cd ${nxp865_dir}
+    repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
+    --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
+    -b spsd/master -m NXP/M865_freertos.xml
+
+    repo sync
+
+    # Add examples
+    cd ${nxp865_dir}/optee
+    git clone https://github.com/linaro-swg/optee_examples.git -b 3.12.0
+
+    # Patch for RPMB test, maybe not need
+    # Patch from git dir run 'git diff > xxx.diff'
+    # patch -d ${nxp865_dir}/optee/optee_examples -p1 < ${shell_folder}/modules/nxp865/patch/optee_examples.diff
+
+    cd ${nxp865_dir}/build
+    ./build.sh nxp_m865_freertos_optee
+
+    # Creat build.sh runqemu.sh rungdb.sh
+    cp ${shell_folder}/modules/nxp865/nxp865_build.sh  ${nxp865_dir}/build.sh
+    cp ${shell_folder}/modules/nxp865/nxp865_build_ta.sh  ${nxp865_dir}/build_ta.sh
+}
+
 function do_create_git_repository()
 {
     git init --bare /gitshop/repository1.git
@@ -336,6 +368,7 @@ function usage()
     echo "    --opteev7:        Build optee base on armv7"
     echo "    --freertos:       Build freertos"
     echo "    --trusty:         Build trusty"
+    echo "    --nxp865:         Build nxp865 with freertos and optee"
     echo "    --git:            Create git repository 'repository1' "
     echo "    --apache:         Create apache server "
     echo "    -h|--help:        Show this help information"
@@ -369,6 +402,7 @@ for arg in "$@"; do
             do_get_and_build_optee_armv8
             do_get_and_build_optee_armv7
             do_get_and_build_trusty
+            do_get_and_build_nxp865_freertos_optee
             shift;;
         --env)
             do_add_swap
@@ -400,6 +434,9 @@ for arg in "$@"; do
             shift;;
         --trusty)
             do_get_and_build_trusty
+            shift;;
+        --nxp865)
+            do_get_and_build_nxp865_freertos_optee
             shift;;
         --git)
             do_create_git_repository
