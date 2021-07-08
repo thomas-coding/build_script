@@ -32,8 +32,11 @@ else
     tfm_dir=${code_dir}/trusted-firmware-m
     tfm_fwu_dir=${code_dir}/tfm-fwu
     trusty_dir=${code_dir}/trusty
-    nxp865_dir=${code_dir}/nxp865
 fi
+
+nxp865_dir=${code_dir}/nxp865
+falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
+falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
 
 
 function do_add_swap()
@@ -347,6 +350,63 @@ function do_get_and_build_nxp865_freertos_optee()
     cp ${shell_folder}/modules/nxp865/nxp865_build_ta.sh  ${nxp865_dir}/build_ta.sh
 }
 
+function do_get_and_build_falcon_qemu_coreboot()
+{
+    if [[ -d ${falcon_qemu_coreboot_dir} ]]; then
+        echo "falcon qemu coreboot already exist ..."
+        return
+    fi
+
+    mkdir -p ${falcon_qemu_coreboot_dir}
+    cd ${falcon_qemu_coreboot_dir}
+    repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
+    --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
+    -b spsd/master -m Falcon/QEMU_coreboot.xml
+
+    repo sync -j4 --no-clone-bundle
+
+    # Change to old data version which compile and run ok
+    repo forall -c 'commitID=`git log --before "2021-03-09 07:00" -1 --pretty=format:"%H"`; git reset --hard $commitID'
+
+    # Build
+    cd ${falcon_qemu_coreboot_dir}/build
+    ./build.sh qemu
+
+    # Creat build.sh runqemu.sh rungdb.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_build.sh  ${falcon_qemu_coreboot_dir}/build.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_runqemu.sh  ${falcon_qemu_coreboot_dir}/runqemu.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_rungdb.sh  ${falcon_qemu_coreboot_dir}/rungdb.sh
+}
+
+function do_get_and_build_falcon_qemu_uboot()
+{
+    if [[ -d ${falcon_qemu_uboot_dir} ]]; then
+        echo "falcon qemu coreboot already exist ..."
+        return
+    fi
+
+    mkdir -p ${falcon_qemu_uboot_dir}
+    cd ${falcon_qemu_uboot_dir}
+    repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
+    --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
+    -b spsd/master -m Falcon/QEMU.xml
+
+    repo sync -j4 --no-clone-bundle
+
+    # Change to old data version which compile and run ok
+    repo forall -c 'commitID=`git log --before "2021-03-09 07:00" -1 --pretty=format:"%H"`; git reset --hard $commitID'
+
+    # Build
+    cd ${falcon_qemu_uboot_dir}/build
+    ./build.sh qemu
+
+    # Creat build.sh runqemu.sh rungdb.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_build.sh  ${falcon_qemu_uboot_dir}/build.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_runqemu.sh  ${falcon_qemu_uboot_dir}/runqemu.sh
+    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_rungdb.sh  ${falcon_qemu_uboot_dir}/rungdb.sh
+}
+
+
 function do_create_git_repository()
 {
     git init --bare /gitshop/repository1.git
@@ -387,6 +447,8 @@ function usage()
     echo "    --freertos:       Build freertos"
     echo "    --trusty:         Build trusty"
     echo "    --nxp865:         Build nxp865 with freertos and optee"
+    echo "    --falcon_qc:      Build falcon qemu coreboot"
+    echo "    --falcon_qemu:    Build falcon qemu uboot"
     echo "    --git:            Create git repository 'repository1' "
     echo "    --apache:         Create apache server "
     echo "    -h|--help:        Show this help information"
@@ -455,6 +517,12 @@ for arg in "$@"; do
             shift;;
         --nxp865)
             do_get_and_build_nxp865_freertos_optee
+            shift;;
+        --falcon_qc)
+            do_get_and_build_falcon_qemu_coreboot
+            shift;;
+        --falcon_qemu)
+            do_get_and_build_falcon_qemu_uboot
             shift;;
         --git)
             do_create_git_repository
