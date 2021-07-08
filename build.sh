@@ -286,20 +286,34 @@ function do_get_and_build_trusty()
         return
     fi
 
+    # Change python 2.7 for build Trusty os
+    sudo update-alternatives --remove-all python
+    sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 9
+
     mkdir -p ${trusty_dir}
     cd ${trusty_dir}
     echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
     # Change old manifest for compile ok
-    #cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
-    #repo init -m manifest_0704.xml
+    # cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
+    # repo init -m manifest_0704.xml
 
-    repo sync -j1
-    ./trusty/vendor/google/aosp/scripts/build.py --skip-tests --jobs 1  qemu-generic-arm64-gicv3-test-debug
+    # Change ~/.gitconfig, add below for get trusty from verisilicon mirror
+    # [url "http://mirror-spsd.verisilicon.com:8080/aosp"]
+    #    insteadOf = https://android.googlesource.com
+
+    repo sync -v -c -j4 --no-clone-bundle
+
+    # Build
+    # ./trusty/vendor/google/aosp/scripts/build.py --skip-tests --jobs 1  qemu-generic-arm64-gicv3-test-debug
+    ./trusty/vendor/google/aosp/scripts/build.py --skip-tests qemu-generic-arm64-gicv3-test-debug
 
     # Creat build.sh runqemu.sh rungdb.sh
     cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
     cp ${shell_folder}/modules/trusty/trusty_runqemu.sh  ${trusty_dir}/runqemu.sh
     cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
+
+    # After trusty build, change back to python3.6
+    sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.6 10
 }
 
 function do_get_and_build_nxp865_freertos_optee()
@@ -352,7 +366,11 @@ function do_create_apache_server()
         mkdir -p /var/www/html/share
     fi
     sudo /etc/init.d/apache2 restart
-    echo "Use 'http://8.210.111.180/share' to visit apache server"
+    echo "Use 'http://8.210.111.180/share' (your ip instead of 8.210.111.180) to visit apache server"
+
+    # Clone doc from github
+    cd /var/www/html/share
+    git clone https://github.com/thomas-coding/doc.git
 }
 
 function usage()
@@ -377,7 +395,7 @@ function usage()
 function do_test()
 {
     echo "test code"
-    patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
+    #patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
     #sleep 10s
 }
 
@@ -447,7 +465,7 @@ for arg in "$@"; do
         -h|--help)
             usage
             exit 0
-            shift;;           
+            shift;;
         *)
             ;;
     esac
