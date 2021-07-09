@@ -230,6 +230,23 @@ function do_get_and_build_tfm_fwu()
     #./build/qemu-system-arm -machine mps2-an521 -cpu cortex-m33 -kernel ${tfm_fwu_dir}/projects/tfm-fwu/cmake_build/install/outputs/MPS2/AN521/bl2.elf -m 16 -nographic
 }
 
+# Make toolchains maybe fail, try to check toolchains folder aarch32 and aarch64 bin
+# If not exist, treate it as download fail, re-download it
+function optee_get_toolchain()
+{
+    echo "Optee download toolchain "
+    for (( c=1; c<=10; c++ ))
+    do
+        echo "Try $c times"
+        make toolchains
+        if [ -d ../toolchains/aarch32/bin ] && [ -d ../toolchains/aarch64/bin ]; then
+            echo "download toolchains Done"
+            break
+        fi
+        rm -rf ../toolchains
+    done
+}
+
 function do_get_and_build_optee_armv8()
 {
     if [[ -d ${optee_armv8_dir} ]]; then
@@ -252,7 +269,8 @@ function do_get_and_build_optee_armv8()
 
     cd ${optee_armv8_dir}/build
 
-    make toolchains
+    optee_get_toolchain
+    #make toolchains
     make -j `nproc`
 
     # Creat build.sh runqemu.sh rungdb.sh
@@ -273,7 +291,8 @@ function do_get_and_build_optee_armv7()
     echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m default.xml -b 3.12.0
     repo sync
     cd ${optee_armv7_dir}/build
-    make toolchains
+    optee_get_toolchain
+    #make toolchains
     make -j `nproc`
 
     #creat build.sh runqemu.sh rungdb.sh
