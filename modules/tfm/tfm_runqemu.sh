@@ -1,12 +1,13 @@
 #!/bin/bash
 
 # shell folder
-shell_folder=$(cd "$(dirname "$0")";pwd)
+shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
+workspace_dir=${shell_folder}/../../..
 
 qemu_version=qemu-6.0.0
 
 # toolcqemuhain
-qemu_try_dir1=~/software/qemu
+qemu_try_dir1=${workspace_dir}/software/qemu
 qemu_try_dir2=~/.toolchains/qemu
 
 # get qemu and export
@@ -16,7 +17,7 @@ function get_and_export_qemu()
     if [[ -d ${qemu_try_dir1} ]]; then
         if [[ -d ${qemu_try_dir1}/${qemu_version}/build ]]; then
             echo "find qemu from ${qemu_try_dir1}"
-            export PATH="${toolchains_try_dir1}/${qemu_version}/build:$PATH"
+            export PATH="${qemu_try_dir1}/${qemu_version}/build:$PATH"
             return
         fi
     fi
@@ -48,5 +49,5 @@ qemu_option+=" -device loader,file=build/install/outputs/MPS2/AN521/tfm_ns.bin,a
 qemu_option+=" -serial stdio -display none -m 16"
 
 # run qemu
-qemu-system-arm ${qemu_option}
+qemu-system-arm "${qemu_option}"
 

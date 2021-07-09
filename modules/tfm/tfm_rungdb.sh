@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # shell folder
-shell_folder=$(cd "$(dirname "$0")";pwd)
+shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 
 # toolchain
 toolchains_try_dir1=~/.toolchain;

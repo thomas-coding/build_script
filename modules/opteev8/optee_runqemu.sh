@@ -9,7 +9,7 @@ else
     echo "not use gdb, just run"
 fi
 
-cd build
+cd build || exit
 
 make ${qemu_option}
 

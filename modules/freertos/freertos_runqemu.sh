@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # shell folder
-shell_folder=$(cd "$(dirname "$0")";pwd)
+shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 workspace_dir=${shell_folder}/../../..
 
 qemu_version=qemu-6.0.0

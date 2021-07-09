@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd build
+cd build || exit
 #make run-only
 make run-only-gdb
 

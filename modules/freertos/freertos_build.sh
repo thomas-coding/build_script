@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # shell folder
-shell_folder=$(cd "$(dirname "$0")";pwd)
+shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 workspace_dir=${shell_folder}/../../..
 
 # toolchain
@@ -38,7 +38,7 @@ function get_and_export_toolchain()
 get_and_export_toolchain
 
 # build
-cd ${demo_dir}
+cd "${demo_dir}" || exit
 rm -rf build
 make DEBUG=1
 

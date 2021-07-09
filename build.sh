@@ -1,12 +1,17 @@
 #!/bin/bash
-shell_folder=$(cd "$(dirname "$0")";pwd)
+shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 
+# Use shell check
+# Install 'python3 –m pip install shellcheck-py' or install vscode shellcheck extension
+
+# Coding style
+# https://github.com/google/styleguide/blob/gh-pages/shellguide.md
 
 # For aliyun, user is root, otherwise, maybe it is owner's compile server
 # Aliyun, default it is empty, create file in system
 # Compile server, build it in current folder
 
-if [[ `whoami` = "root" ]]; then
+if [[ $(whoami) = "root" ]]; then
     is_root=y
 else
     is_root=n
@@ -58,6 +63,7 @@ function do_install_package()
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         echo "export PATH=~/bin:$PATH" >> ~/.bashrc
+        # shellcheck source=/dev/null
         source ~/.bashrc
     fi
 
@@ -88,14 +94,14 @@ function do_install_qemu()
     if [[ -d ${qemu_dir} ]]; then
         return
     fi
-    mkdir -p ${qemu_dir}
-    wget --directory-prefix=${qemu_dir} https://download.qemu.org/qemu-6.0.0.tar.xz
-    cd ${qemu_dir}
+    mkdir -p "${qemu_dir}"
+    wget --directory-prefix="${qemu_dir}" https://download.qemu.org/qemu-6.0.0.tar.xz
+    cd "${qemu_dir}" || exit
     tar -xvf qemu-6.0.0.tar.xz
-    cd qemu-6.0.0
+    cd qemu-6.0.0 || exit
     ./configure --target-list=aarch64-softmmu,arm-softmmu --enable-debug
-    make -j `nproc`
-    rm -rf qemu-6.0.0.tar.xz
+    make -j "$(nproc)"
+    rm -rf "${qemu_dir}"/qemu-6.0.0.tar.xz
 }
 
 function do_install_toolchain()
@@ -103,28 +109,28 @@ function do_install_toolchain()
     # install toolchain
     echo "install toolchains ..."
     if [[ ! -d ${toolchains_dir} ]]; then
-        mkdir ${toolchains_dir}
+        mkdir "${toolchains_dir}"
     fi
 
-    cd ${toolchains_dir}
+    cd "${toolchains_dir}" || exit
 
     if [[ ! -d gcc-arm-none-eabi-10-2020-q4-major ]]; then
-        wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
+        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
         tar -xvf gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
     fi
 
     if [[ ! -d gcc-arm-none-eabi-9-2019-q4-major ]]; then
-        wget --directory-prefix=${toolchains_dir} https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
         tar -xvf gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
     fi
 
     #delete tar file
-    rm -rf *.tar.bz*
+    rm -rf ./*.tar.bz*
 }
 
 function do_install_cmake()
 {
-    cd ${toolchains_dir}
+    cd "${toolchains_dir}" || exit
     if [[ ! -d cmake-3.20.5-linux-x86_64 ]]; then
         wget  https://github.com/Kitware/CMake/releases/download/v3.20.5/cmake-3.20.5-linux-x86_64.sh
         chmod +x cmake-3.20.5-linux-x86_64.sh
@@ -143,15 +149,15 @@ function do_get_and_build_freertos()
         return
     fi
 
-    mkdir -p ${freertos_dir}
-    cd ${freertos_dir}
+    mkdir -p "${freertos_dir}"
+    cd "${freertos_dir}" || exit
     git clone https://github.com/FreeRTOS/FreeRTOS.git --recurse-submodules
-    cd ${freertos_dir}/FreeRTOS
+    cd "${freertos_dir}"/FreeRTOS || exit
 
     # creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/freertos/freertos_build.sh  ${freertos_dir}/FreeRTOS/build.sh
-    cp ${shell_folder}/modules/freertos/freertos_runqemu.sh  ${freertos_dir}/FreeRTOS/runqemu.sh
-    cp ${shell_folder}/modules/freertos/freertos_rungdb.sh  ${freertos_dir}/FreeRTOS/rungdb.sh
+    cp "${shell_folder}"/modules/freertos/freertos_build.sh  "${freertos_dir}"/FreeRTOS/build.sh
+    cp "${shell_folder}"/modules/freertos/freertos_runqemu.sh  "${freertos_dir}"/FreeRTOS/runqemu.sh
+    cp "${shell_folder}"/modules/freertos/freertos_rungdb.sh  "${freertos_dir}"/FreeRTOS/rungdb.sh
 
     #build
     ./build.sh
@@ -166,19 +172,19 @@ function do_get_and_build_tfm()
     fi
 
     if [[ ! -d ${code_dir} ]]; then
-        mkdir -p ${code_dir}
+        mkdir -p "${code_dir}"
     fi
 
-    cd ${code_dir}
+    cd "${code_dir}" || exit
     git clone --branch TF-Mv1.3.0 https://git.trustedfirmware.org/TF-M/trusted-firmware-m.git
     python3 -m pip install "pip>=21.1.1"
-    cd ${tfm_dir}
-    python3 -m pip install -r ${tfm_dir}/tools/requirements.txt
+    cd "${tfm_dir}" || exit
+    python3 -m pip install -r "${tfm_dir}"/tools/requirements.txt
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/tfm/tfm_build.sh  ${tfm_dir}/build.sh
-    cp ${shell_folder}/modules/tfm/tfm_runqemu.sh  ${tfm_dir}/runqemu.sh
-    cp ${shell_folder}/modules/tfm/tfm_rungdb.sh  ${tfm_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/tfm/tfm_build.sh  "${tfm_dir}"/build.sh
+    cp "${shell_folder}"/modules/tfm/tfm_runqemu.sh  "${tfm_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/tfm/tfm_rungdb.sh  "${tfm_dir}"/rungdb.sh
 
     #build
     ./build.sh
@@ -192,28 +198,28 @@ function do_get_and_build_tfm_fwu()
         return
     fi
     
-    mkdir -p ${tfm_fwu_dir}/projects
+    mkdir -p "${tfm_fwu_dir}"/projects
 
     #download
-    cd ${tfm_fwu_dir}/projects
+    cd "${tfm_fwu_dir}"/projects || exit
     git clone https://github.com/emb-team/freertos-tfm-fwu.git --recurse-submodules
     git clone https://github.com/emb-team/qemu-tfm
     git clone https://github.com/emb-team/tfm-fwu
 
     #build qemu
-    cd ${tfm_fwu_dir}/projects/qemu-tfm
+    cd "${tfm_fwu_dir}"/projects/qemu-tfm || exit
     mkdir build
-    cd ${tfm_fwu_dir}/projects/qemu-tfm/build
+    cd "${tfm_fwu_dir}"/projects/qemu-tfm/build || exit
     ../configure --target-list=aarch64-softmmu,arm-softmmu
-    make -j `nproc`
+    make -j "$(nproc)"
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_build.sh  ${tfm_fwu_dir}/projects/build.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_runqemu.sh  ${tfm_fwu_dir}/projects/runqemu.sh
-    cp ${shell_folder}/modules/tfm_fwu/tfm_fwu_rungdb.sh  ${tfm_fwu_dir}/projects/rungdb.sh
+    cp "${shell_folder}"/modules/tfm_fwu/tfm_fwu_build.sh  "${tfm_fwu_dir}"/projects/build.sh
+    cp "${shell_folder}"/modules/tfm_fwu/tfm_fwu_runqemu.sh  "${tfm_fwu_dir}"/projects/runqemu.sh
+    cp "${shell_folder}"/modules/tfm_fwu/tfm_fwu_rungdb.sh  "${tfm_fwu_dir}"/projects/rungdb.sh
 
     #build
-    cd ${tfm_fwu_dir}/projects/
+    cd "${tfm_fwu_dir}"/projects || exit
     ./build.sh
 
     #run qemu
@@ -245,29 +251,29 @@ function do_get_and_build_optee_armv8()
         return
     fi
 
-    mkdir -p ${optee_armv8_dir}
-    cd ${optee_armv8_dir}
+    mkdir -p "${optee_armv8_dir}"
+    cd "${optee_armv8_dir}" || exit
     echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m qemu_v8.xml -b 3.12.0
 
     repo sync
 
     # Patch
     # Patch from git dir run 'git diff > xxx.diff'
-    patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
-    patch -d ${optee_armv8_dir}/optee_client -p1 < ${shell_folder}/modules/opteev8/patch/optee_client.diff
-    patch -d ${optee_armv8_dir}/optee_os -p1 < ${shell_folder}/modules/opteev8/patch/optee_os.diff
-    patch -d ${optee_armv8_dir}/trusted-firmware-a -p1 < ${shell_folder}/modules/opteev8/patch/trusted-firmware-a.diff
+    patch -d "${optee_armv8_dir}"/build -p1 < "${shell_folder}"/modules/opteev8/patch/build.diff
+    patch -d "${optee_armv8_dir}"/optee_client -p1 < "${shell_folder}"/modules/opteev8/patch/optee_client.diff
+    patch -d "${optee_armv8_dir}"/optee_os -p1 < "${shell_folder}"/modules/opteev8/patch/optee_os.diff
+    patch -d "${optee_armv8_dir}"/trusted-firmware-a -p1 < "${shell_folder}"/modules/opteev8/patch/trusted-firmware-a.diff
 
-    cd ${optee_armv8_dir}/build
+    cd "${optee_armv8_dir}"/build || exit
 
     optee_get_toolchain
     #make toolchains
-    make -j `nproc`
+    make -j "$(nproc)"
 
     # Creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/opteev8/optee_build.sh  ${optee_armv8_dir}/build.sh
-    cp ${shell_folder}/modules/opteev8/optee_runqemu.sh  ${optee_armv8_dir}/runqemu.sh
-    cp ${shell_folder}/modules/opteev8/optee_rungdb.sh  ${optee_armv8_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/opteev8/optee_build.sh  "${optee_armv8_dir}"/build.sh
+    cp "${shell_folder}"/modules/opteev8/optee_runqemu.sh  "${optee_armv8_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/opteev8/optee_rungdb.sh  "${optee_armv8_dir}"/rungdb.sh
 }
 
 function do_get_and_build_optee_armv7()
@@ -277,19 +283,19 @@ function do_get_and_build_optee_armv7()
         return
     fi
 
-    mkdir -p ${optee_armv7_dir}
-    cd ${optee_armv7_dir}
+    mkdir -p "${optee_armv7_dir}"
+    cd "${optee_armv7_dir}" || exit || exit
     echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m default.xml -b 3.12.0
     repo sync
-    cd ${optee_armv7_dir}/build
+    cd "${optee_armv7_dir}"/build || exit
     optee_get_toolchain
     #make toolchains
-    make -j `nproc`
+    make -j "$(nproc)"
 
     #creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/opteev7/optee_build.sh  ${optee_armv7_dir}/build.sh
-    cp ${shell_folder}/modules/opteev7/optee_runqemu.sh  ${optee_armv7_dir}/runqemu.sh
-    cp ${shell_folder}/modules/opteev7/optee_rungdb.sh  ${optee_armv7_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/opteev7/optee_build.sh  "${optee_armv7_dir}"/build.sh
+    cp "${shell_folder}"/modules/opteev7/optee_runqemu.sh  "${optee_armv7_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/opteev7/optee_rungdb.sh  "${optee_armv7_dir}"/rungdb.sh
 }
 
 function do_get_and_build_trusty()
@@ -303,8 +309,8 @@ function do_get_and_build_trusty()
     sudo update-alternatives --remove-all python
     sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 9
 
-    mkdir -p ${trusty_dir}
-    cd ${trusty_dir}
+    mkdir -p "${trusty_dir}"
+    cd "${trusty_dir}" || exit
     echo "y" | repo init -u https://android.googlesource.com/trusty/manifest -b master
     # Change old manifest for compile ok
     # cp ${shell_folder}/modules/trusty/manifest_0704.xml  ${trusty_dir}/.repo/manifests/
@@ -321,9 +327,9 @@ function do_get_and_build_trusty()
     ./trusty/vendor/google/aosp/scripts/build.py --skip-tests qemu-generic-arm64-gicv3-test-debug
 
     # Creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/trusty/trusty_build.sh  ${trusty_dir}/build.sh
-    cp ${shell_folder}/modules/trusty/trusty_runqemu.sh  ${trusty_dir}/runqemu.sh
-    cp ${shell_folder}/modules/trusty/trusty_rungdb.sh  ${trusty_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/trusty/trusty_build.sh  "${trusty_dir}"/build.sh
+    cp "${shell_folder}"/modules/trusty/trusty_runqemu.sh  "${trusty_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/trusty/trusty_rungdb.sh  "${trusty_dir}"/rungdb.sh
 
     # After trusty build, change back to python3.6
     sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.6 10
@@ -336,8 +342,8 @@ function do_get_and_build_nxp865_freertos_optee()
         return
     fi
 
-    mkdir -p ${nxp865_dir}
-    cd ${nxp865_dir}
+    mkdir -p "${nxp865_dir}"
+    cd "${nxp865_dir}" || exit
     repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
     --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
     -b spsd/master -m NXP/M865_freertos.xml
@@ -345,19 +351,19 @@ function do_get_and_build_nxp865_freertos_optee()
     repo sync
 
     # Add examples
-    cd ${nxp865_dir}/optee
+    cd "${nxp865_dir}"/optee || exit
     git clone https://github.com/linaro-swg/optee_examples.git -b 3.12.0
 
     # Patch for RPMB test, maybe not need
     # Patch from git dir run 'git diff > xxx.diff'
     # patch -d ${nxp865_dir}/optee/optee_examples -p1 < ${shell_folder}/modules/nxp865/patch/optee_examples.diff
 
-    cd ${nxp865_dir}/build
+    cd "${nxp865_dir}"/build || exit
     ./build.sh nxp_m865_freertos_optee
 
     # Creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/nxp865/nxp865_build.sh  ${nxp865_dir}/build.sh
-    cp ${shell_folder}/modules/nxp865/nxp865_build_ta.sh  ${nxp865_dir}/build_ta.sh
+    cp "${shell_folder}"/modules/nxp865/nxp865_build.sh  "${nxp865_dir}"/build.sh
+    cp "${shell_folder}"/modules/nxp865/nxp865_build_ta.sh  "${nxp865_dir}"/build_ta.sh
 }
 
 function do_get_and_build_falcon_qemu_coreboot()
@@ -367,8 +373,8 @@ function do_get_and_build_falcon_qemu_coreboot()
         return
     fi
 
-    mkdir -p ${falcon_qemu_coreboot_dir}
-    cd ${falcon_qemu_coreboot_dir}
+    mkdir -p "${falcon_qemu_coreboot_dir}"
+    cd "${falcon_qemu_coreboot_dir}" || exit
     repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
     --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
     -b spsd/master -m Falcon/QEMU_coreboot.xml
@@ -379,13 +385,13 @@ function do_get_and_build_falcon_qemu_coreboot()
     repo forall -c 'commitID=`git log --before "2021-03-09 07:00" -1 --pretty=format:"%H"`; git reset --hard $commitID'
 
     # Build
-    cd ${falcon_qemu_coreboot_dir}/build
+    cd "${falcon_qemu_coreboot_dir}"/build || exit
     ./build.sh qemu
 
     # Creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_build.sh  ${falcon_qemu_coreboot_dir}/build.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_runqemu.sh  ${falcon_qemu_coreboot_dir}/runqemu.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_rungdb.sh  ${falcon_qemu_coreboot_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_build.sh  "${falcon_qemu_coreboot_dir}"/build.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_runqemu.sh  "${falcon_qemu_coreboot_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_rungdb.sh  "${falcon_qemu_coreboot_dir}"/rungdb.sh
 }
 
 function do_get_and_build_falcon_qemu_uboot()
@@ -395,8 +401,8 @@ function do_get_and_build_falcon_qemu_uboot()
         return
     fi
 
-    mkdir -p ${falcon_qemu_uboot_dir}
-    cd ${falcon_qemu_uboot_dir}
+    mkdir -p "${falcon_qemu_uboot_dir}"
+    cd "${falcon_qemu_uboot_dir}" || exit
     repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest \
     --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo \
     -b spsd/master -m Falcon/QEMU.xml
@@ -407,13 +413,13 @@ function do_get_and_build_falcon_qemu_uboot()
     repo forall -c 'commitID=`git log --before "2021-03-09 07:00" -1 --pretty=format:"%H"`; git reset --hard $commitID'
 
     # Build
-    cd ${falcon_qemu_uboot_dir}/build
+    cd "${falcon_qemu_uboot_dir}"/build || exit
     ./build.sh qemu
 
     # Creat build.sh runqemu.sh rungdb.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_build.sh  ${falcon_qemu_uboot_dir}/build.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_runqemu.sh  ${falcon_qemu_uboot_dir}/runqemu.sh
-    cp ${shell_folder}/modules/falcon_qemu/falcon_qemu_rungdb.sh  ${falcon_qemu_uboot_dir}/rungdb.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_build.sh  "${falcon_qemu_uboot_dir}"/build.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_runqemu.sh  "${falcon_qemu_uboot_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/falcon_qemu/falcon_qemu_rungdb.sh  "${falcon_qemu_uboot_dir}"/rungdb.sh
 }
 
 
@@ -432,14 +438,14 @@ function do_create_apache_server()
 {
     sudo apt-get -y install apache2
     if [[ ! -d /var/www/html/share ]]; then
-        cd /var/www/html/
+        cd /var/www/html/ || exit
         mkdir -p /var/www/html/share
     fi
     sudo /etc/init.d/apache2 restart
     echo "Use 'http://8.210.111.180/share' (your ip instead of 8.210.111.180) to visit apache server"
 
     # Clone doc from github
-    cd /var/www/html/share
+    cd /var/www/html/share || exit
     git clone https://github.com/thomas-coding/doc.git
 }
 
@@ -550,6 +556,6 @@ for arg in "$@"; do
 done
 
 finish_time=${SECONDS}
-duration=$((${finish_time}-${start_time}))
-elapsed_time="$((${duration} / 60))m $((${duration} % 60))s"
+duration=$((finish_time-start_time))
+elapsed_time="$((duration / 60))m $((duration % 60))s"
 echo "do ${module} use: ${elapsed_time}"

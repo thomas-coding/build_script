@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd qemu-tfm
+cd qemu-tfm || exit
 #./runqemu.sh
 
 ./build/qemu-system-arm \

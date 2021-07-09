@@ -13,7 +13,7 @@ function usage()
     echo "    -h|--help:        Show this help information"
 }
 
-cd build
+cd build || exit
 
 #parse option
 start_time=${SECONDS}
@@ -22,22 +22,22 @@ for arg in "$@"; do
     module+=$arg 
     case $arg in
         all)
-            make -j `nproc` arm-tf buildroot edk2 linux optee-os soc-term
+            make -j "$(nproc)" arm-tf buildroot edk2 linux optee-os soc-term
             shift;;
         optee)
-            make -j `nproc` optee-os
+            make -j "$(nproc)" optee-os
             shift;;
         atf)
-            make -j `nproc` arm-tf
+            make -j "$(nproc)" arm-tf
             shift;;
         linux)
-            make -j `nproc` linux
+            make -j "$(nproc)" linux
             shift;;
         optee_client)
-            make -j `nproc` optee-os buildroot
+            make -j "$(nproc)" optee-os buildroot
             shift;;
         buildroot)
-            make -j `nproc` buildroot
+            make -j "$(nproc)" buildroot
             shift;;
         -h|--help)
             usage
@@ -51,8 +51,8 @@ for arg in "$@"; do
 done
 
 finish_time=${SECONDS}
-duration=$((${finish_time}-${start_time}))
-elapsed_time="$((${duration} / 60))m $((${duration} % 60))s"
+duration=$((finish_time-start_time))
+elapsed_time="$((duration / 60))m $((duration % 60))s"
 
 if [[ ${module}  = "" ]]; then
     echo "unknow arg $arg, please run './build.sh -h' for more infomation "

@@ -2,7 +2,7 @@
 
 
 
-cd build
+cd build || exit
 #make 
 #for optee client
 make optee-os buildroot
