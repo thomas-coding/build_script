@@ -2,9 +2,10 @@
 
 # shell folder
 shell_folder=$(cd "$(dirname "$0")";pwd)
+workspace_dir=${shell_folder}/../../..
 
 # toolchain
-toolchains_try_dir1=~/.toolchains;
+toolchains_try_dir1=${workspace_dir}/.toolchains;
 toolchains_try_dir2=~/.toolchain;
 toolchian=gcc-arm-none-eabi-10-2020-q4-major
 

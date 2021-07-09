@@ -2,6 +2,7 @@
 
 # shell folder
 shell_folder=$(cd "$(dirname "$0")";pwd)
+workspace_dir=${shell_folder}/../../..
 
 qemu_version=qemu-6.0.0
 
@@ -9,8 +10,8 @@ qemu_version=qemu-6.0.0
 demo_dir=${shell_folder}/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC
 
 # toolchain
-qemu_try_dir1=~/software/qemu
-qemu_try_dir2=~/.toolchains/qemu
+qemu_try_dir1=${workspace_dir}/software/qemu
+qemu_try_dir2=~/.toolchain/qemu
 
 # get toolchain and export
 function get_and_export_qemu()
@@ -19,7 +20,7 @@ function get_and_export_qemu()
     if [[ -d ${qemu_try_dir1} ]]; then
         if [[ -d ${qemu_try_dir1}/${qemu_version}/build ]]; then
             echo "find qemu from ${qemu_try_dir1}"
-            export PATH="${toolchains_try_dir1}/${qemu_version}/build:$PATH"
+            export PATH="${qemu_try_dir1}/${qemu_version}/build:$PATH"
             return
         fi
     fi
