@@ -449,6 +449,14 @@ function do_create_apache_server()
     git clone https://github.com/thomas-coding/doc.git
 }
 
+
+function do_install_vnc_server()
+{
+    sudo apt-get install -y vnc4server
+    echo "please input password, less then 8"
+    vncserver
+}
+
 function usage()
 {
     echo "build <option>"
@@ -467,6 +475,7 @@ function usage()
     echo "    --falcon_qemu:    Build falcon qemu uboot"
     echo "    --git:            Create git repository 'repository1' "
     echo "    --apache:         Create apache server "
+    echo "    --vnc:            Install vnc server, only cmdline mode "
     echo "    -h|--help:        Show this help information"
 }
 
@@ -545,6 +554,9 @@ for arg in "$@"; do
             shift;;
         --apache)
             do_create_apache_server
+            shift;;
+        --vnc)
+            do_install_vnc_server
             shift;;
         -h|--help)
             usage
