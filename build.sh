@@ -12,28 +12,19 @@ else
     is_root=n
 fi
 
-if [[ "${is_root}" = "y" ]]; then
-    qemu_dir=/root/software/qemu
-    toolchains_dir=/root/.toolchains
-    code_dir=/root/code
-    freertos_dir=${code_dir}/freertos
-    optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
-    optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
-    tfm_dir=${code_dir}/trusted-firmware-m
-    tfm_fwu_dir=${code_dir}/tfm-fwu
-    trusty_dir=${code_dir}/trusty
-else
-    code_dir=${shell_folder}/../code
-    toolchains_dir=~/.toolchains
-    qemu_dir=${toolchains_dir}/qemu
-    freertos_dir=${code_dir}/freertos
-    optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
-    optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
-    tfm_dir=${code_dir}/trusted-firmware-m
-    tfm_fwu_dir=${code_dir}/tfm-fwu
-    trusty_dir=${code_dir}/trusty
-fi
+workspace_dir=${shell_folder}/../
+code_dir=${workspace_dir}/code
+toolchains_dir=${workspace_dir}/.toolchains
+software_dir=${workspace_dir}/software
 
+qemu_dir=${software_dir}/qemu
+
+freertos_dir=${code_dir}/freertos
+optee_armv8_dir=${code_dir}/optee_armv8_3.12.0
+optee_armv7_dir=${code_dir}/optee_armv7_3.12.0
+tfm_dir=${code_dir}/trusted-firmware-m
+tfm_fwu_dir=${code_dir}/tfm-fwu
+trusty_dir=${code_dir}/trusty
 nxp865_dir=${code_dir}/nxp865
 falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
 falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
