@@ -352,7 +352,11 @@ function do_get_and_build_nxp865_freertos_optee()
 
     # Add examples
     cd "${nxp865_dir}"/optee || exit
-    git clone https://github.com/linaro-swg/optee_examples.git -b 3.12.0
+    # optee_os base on 3.10.0, so other parts also use 3.10.0
+    git clone https://github.com/linaro-swg/optee_examples.git -b 3.10.0
+
+    git clone https://github.com/OP-TEE/optee_test.git -b 3.10.0
+    git clone https://github.com/OP-TEE/optee_client.git -b 3.10.0
 
     # Patch for RPMB test, maybe not need
     # Patch from git dir run 'git diff > xxx.diff'

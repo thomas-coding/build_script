@@ -15,3 +15,17 @@ make CROSS_COMPILE=aarch64-none-linux-gnu-
 cd "${OPTEE_DIR}"/optee_examples/secure_storage/ta || exit
 export TA_DEV_KIT_DIR=${OPTEE_DIR}/optee_os/out/arm-plat-imx/export-ta_arm64
 make CROSS_COMPILE=aarch64-none-linux-gnu-
+
+
+# Build OPTEE client
+cd "${OPTEE_DIR}"/optee_client || exit
+export TA_DEV_KIT_DIR=${OPTEE_DIR}/optee_os/out/arm-plat-imx/export-ta_arm64
+make CROSS_COMPILE=aarch64-none-linux-gnu-
+
+# Build xtest ta
+cd "${OPTEE_DIR}"/optee_test || exit
+export OPTEE_CLIENT_EXPORT=${OPTEE_DIR}/optee_client/out/export/usr
+export TA_DEV_KIT_DIR=${OPTEE_DIR}/optee_os/out/arm-plat-imx/export-ta_arm64
+export CROSS_COMPILE=aarch64-none-linux-gnu-
+
+make CFG_TEE_TA_LOG_LEVEL=3 all
