@@ -108,6 +108,7 @@ function do_install_toolchain()
 {
     # install toolchain
     echo "install toolchains ..."
+
     if [[ ! -d ${toolchains_dir} ]]; then
         mkdir "${toolchains_dir}"
     fi
@@ -368,6 +369,7 @@ function do_get_and_build_nxp865_freertos_optee()
     # Creat build.sh runqemu.sh rungdb.sh
     cp "${shell_folder}"/modules/nxp865/nxp865_build.sh  "${nxp865_dir}"/build.sh
     cp "${shell_folder}"/modules/nxp865/nxp865_build_ta.sh  "${nxp865_dir}"/build_ta.sh
+    cp "${shell_folder}"/modules/nxp865/toflash.c  "${nxp865_dir}"/toflash.c
 }
 
 function do_get_and_build_falcon_qemu_coreboot()
