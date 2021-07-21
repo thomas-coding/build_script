@@ -49,5 +49,5 @@ qemu_option+=" -device loader,file=build/install/outputs/MPS2/AN521/tfm_ns.bin,a
 qemu_option+=" -serial stdio -display none -m 16"
 
 # run qemu
-qemu-system-arm "${qemu_option}"
+qemu-system-arm ${qemu_option}
 

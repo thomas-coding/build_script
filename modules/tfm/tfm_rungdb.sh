@@ -3,9 +3,11 @@
 # shell folder
 shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 
+workspace_dir=${shell_folder}/../..
+
 # toolchain
 toolchains_try_dir1=~/.toolchain;
-toolchains_try_dir2=~/.toolchains;
+toolchains_try_dir2=${workspace_dir}/.toolchains;
 toolchian=gcc-arm-none-eabi-9-2019-q4-major
 
 tfm_home=${shell_folder}

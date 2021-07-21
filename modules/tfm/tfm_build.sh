@@ -3,7 +3,9 @@
 shell_folder=$(cd "$(dirname "$0")" || exit;pwd)
 
 tfm_home=${shell_folder}
-#cmake_bin_dir=~/.toolchains/cmake-3.20.5-linux-x86_64/bin
+
+# shell folder
+workspace_dir=${shell_folder}/../..
 
 tfm_mode=ipc
 tfm_debug=y
@@ -11,7 +13,7 @@ tfm_test=y
 
 # toolchain
 toolchains_try_dir1=~/.toolchains;
-toolchains_try_dir2=~/.toolchain;
+toolchains_try_dir2=${workspace_dir}/.toolchain;
 toolchian=gcc-arm-none-eabi-9-2019-q4-major
 
 # cmake
@@ -127,7 +129,7 @@ mkdir "${tfm_home}"/build
 
 cd "${tfm_home}"/build || exit
 
-cmake "${build_option}"
+cmake ${build_option}
 make install
 
 arm-none-eabi-objdump -Slg bin/tfm_s.elf > bin/tfm_s.objdump
