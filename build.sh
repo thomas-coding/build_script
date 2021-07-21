@@ -17,7 +17,7 @@ else
     is_root=n
 fi
 
-workspace_dir=${shell_folder}/../
+workspace_dir=${shell_folder}/..
 code_dir=${workspace_dir}/code
 toolchains_dir=${workspace_dir}/.toolchains
 software_dir=${workspace_dir}/software
