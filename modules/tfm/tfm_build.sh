@@ -13,7 +13,7 @@ tfm_test=y
 
 # toolchain
 toolchains_try_dir1=~/.toolchains;
-toolchains_try_dir2=${workspace_dir}/.toolchain;
+toolchains_try_dir2=${workspace_dir}/.toolchains;
 toolchian=gcc-arm-none-eabi-9-2019-q4-major
 
 # cmake

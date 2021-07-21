@@ -219,13 +219,14 @@ function do_get_and_build_tfm_fwu()
     cp "${shell_folder}"/modules/tfm_fwu/tfm_fwu_runqemu.sh  "${tfm_fwu_dir}"/projects/runqemu.sh
     cp "${shell_folder}"/modules/tfm_fwu/tfm_fwu_rungdb.sh  "${tfm_fwu_dir}"/projects/rungdb.sh
 
+
+    patch -d "${tfm_fwu_dir}"/projects/freertos-tfm-fwu/freertos_kernel -p1 < "${shell_folder}"/modules/tfm_fwu/patch/freertos_kernel.diff
+    patch -d "${tfm_fwu_dir}"/projects/tfm-fwu -p1 < "${shell_folder}"/modules/tfm_fwu/patch/tfm-fwu.diff
+
     #build
     cd "${tfm_fwu_dir}"/projects || exit
     ./build.sh
 
-    #run qemu
-    #cd ${tfm_fwu_dir}/projects/qemu-tfm
-    #./build/qemu-system-arm -machine mps2-an521 -cpu cortex-m33 -kernel ${tfm_fwu_dir}/projects/tfm-fwu/cmake_build/install/outputs/MPS2/AN521/bl2.elf -m 16 -nographic
 }
 
 # Make toolchains maybe fail, try to check toolchains folder aarch32 and aarch64 bin

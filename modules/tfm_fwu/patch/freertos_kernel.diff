@@ -1,0 +1,20 @@
+diff --git a/portable/ThirdParty/GCC/ARM_CM33_TFM/main_blinky.c b/portable/ThirdParty/GCC/ARM_CM33_TFM/main_blinky.c
+index f4e392f40..8acd0c190 100644
+--- a/portable/ThirdParty/GCC/ARM_CM33_TFM/main_blinky.c
++++ b/portable/ThirdParty/GCC/ARM_CM33_TFM/main_blinky.c
+@@ -248,6 +248,7 @@ const uint32_t ulExpectedValue = 100UL;
+         LOG_OUT("The version of the PSA Framework API is not valid!\n");
+     }
+ 
++#if 0
+ #ifdef TFM_S_INSTALL
+ 	LOG_OUT("Updating TFM-S FW...\n");
+ 	ota_update_tfm_s();
+@@ -260,6 +261,7 @@ const uint32_t ulExpectedValue = 100UL;
+ 
+     LOG_OUT("Rebooting after install ...\n");
+     tfm_fwu_request_reboot();
++#endif
+ 
+     for( ;; )
+     {
