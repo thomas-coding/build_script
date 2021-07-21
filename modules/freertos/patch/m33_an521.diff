@@ -1,0 +1,121 @@
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/FreeRTOSConfig.h b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/FreeRTOSConfig.h
+index 420e72462..0fbabf3b8 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/FreeRTOSConfig.h
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/FreeRTOSConfig.h
+@@ -120,4 +120,9 @@ extern void vLoggingPrintf( const char * pcFormatString,
+     #define xPortGetFreeHeapSize               ( x )
+ #endif
+ 
++#define configENABLE_FPU                        0
++#define configENABLE_MPU                        0
++#define configENABLE_TRUSTZONE                  0
++#define configRUN_FREERTOS_SECURE_ONLY          1
++
+ #endif /* FREERTOS_CONFIG_H */
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/Makefile b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/Makefile
+index 73476feeb..f0ec9efe3 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/Makefile
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/Makefile
+@@ -11,7 +11,9 @@ FREERTOS_PLUS_DIR_REL := ../../../FreeRTOS-Plus
+ FREERTOS_PLUS_DIR := $(abspath $(FREERTOS_PLUS_DIR_REL))
+ 
+ SOURCE_FILES += init/startup.c  syscall.c main.c
+-SOURCE_FILES += $(KERNEL_DIR)/portable/GCC/ARM_CM3/port.c
++#SOURCE_FILES += $(KERNEL_DIR)/portable/GCC/ARM_CM3/port.c
++SOURCE_FILES += $(KERNEL_DIR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c
++SOURCE_FILES += ${KERNEL_DIR}/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
+ SOURCE_FILES += $(KERNEL_DIR)/tasks.c
+ SOURCE_FILES += $(KERNEL_DIR)/list.c
+ SOURCE_FILES += $(KERNEL_DIR)/queue.c
+@@ -22,7 +24,8 @@ SOURCE_FILES += ${KERNEL_DIR}/portable/MemMang/heap_3.c
+ INCLUDE_DIRS += -I$(FREERTOS_DIR)/Demo/CORTEX_M3_MPS2_QEMU_GCC
+ INCLUDE_DIRS += -I$(FREERTOS_DIR)/Demo/CORTEX_M3_MPS2_QEMU_GCC/CMSIS
+ INCLUDE_DIRS += -I$(KERNEL_DIR)/include
+-INCLUDE_DIRS += -I$(KERNEL_DIR)/portable/GCC/ARM_CM3
++#INCLUDE_DIRS += -I$(KERNEL_DIR)/portable/GCC/ARM_CM3
++INCLUDE_DIRS += -I$(KERNEL_DIR)/portable/GCC/ARM_CM33_NTZ/non_secure
+ 
+ ifeq ($(FULL_DEMO), 1)
+     SOURCE_FILES += main_full.c
+@@ -69,7 +72,7 @@ DEFINES :=  -DQEMU_SOC_MPS2 -DHEAP3
+ LDFLAGS = -T ./scripts/mps2_m3.ld -specs=nano.specs --specs=rdimon.specs -lc -lrdimon
+ LDFLAGS += -Xlinker -Map=${BUILD_DIR}/output.map
+ 
+-CFLAGS += -nostartfiles -mthumb -mcpu=cortex-m3 -Wno-error=implicit-function-declaration
++CFLAGS += -nostartfiles -mcpu=cortex-m33+nodsp -Wno-error=implicit-function-declaration
+ CFLAGS += -Wno-builtin-declaration-mismatch -Werror
+ 
+ ifeq ($(DEBUG), 1)
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/init/startup.c b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/init/startup.c
+index 4d6e2cff2..a1614cb1a 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/init/startup.c
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/init/startup.c
+@@ -31,9 +31,9 @@
+ #include "CMSIS/CMSDK_CM3.h"
+ #include "CMSIS/core_cm3.h"
+ 
+-extern void vPortSVCHandler( void );
+-extern void xPortPendSVHandler( void );
+-extern void xPortSysTickHandler( void );
++extern void SVC_Handler( void );
++extern void PendSV_Handler( void );
++extern void SysTick_Handler( void );
+ extern void uart_init();
+ extern int main();
+ 
+@@ -171,11 +171,11 @@ const uint32_t * isr_vector[] __attribute__( ( section( ".isr_vector" ) ) ) =
+     0,                                   /* reserved */
+     0,                                   /* reserved */
+     0,                                   /* reserved   -6 */
+-    ( uint32_t * ) &vPortSVCHandler,     /* SVC_Handler              -5 */
++    ( uint32_t * ) &SVC_Handler,     /* SVC_Handler              -5 */
+     ( uint32_t * ) &Default_Handler6,    /* DebugMon_Handler         -4 */
+     0,                                   /* reserved */
+-    ( uint32_t * ) &xPortPendSVHandler,  /* PendSV handler    -2 */
+-    ( uint32_t * ) &xPortSysTickHandler, /* SysTick_Handler   -1 */
++    ( uint32_t * ) &PendSV_Handler,  /* PendSV handler    -2 */
++    ( uint32_t * ) &SysTick_Handler, /* SysTick_Handler   -1 */
+     0,                                   /* uart0 receive 0 */
+     0,                                   /* uart0 transmit */
+     0,                                   /* uart1 receive */
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/main.c b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/main.c
+index 18ef9c293..0bf10e86a 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/main.c
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/main.c
+@@ -55,6 +55,7 @@ StackType_t uxTimerTaskStack[ configTIMER_TASK_STACK_DEPTH ];
+ 
+ int main()
+ {
++    printf( "enter main\n");
+     #if ( mainCREATE_SIMPLE_BLINKY_DEMO_ONLY == 1 )
+         {
+             main_blinky();
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/scripts/mps2_m3.ld b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/scripts/mps2_m3.ld
+index 74b0acc36..e1add1b9d 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/scripts/mps2_m3.ld
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/scripts/mps2_m3.ld
+@@ -26,8 +26,8 @@
+ 
+ MEMORY
+ {
+-    FLASH (xr) : ORIGIN = 0x00000000, LENGTH = 4M /* to 0x00003FFF = 0x007FFFFF*/
+-    RAM (xrw)  : ORIGIN = 0x20000000, LENGTH = 4M /* to 0x21FFFFFF = 0xFFFFFF */
++    FLASH (xr) : ORIGIN = 0x10000000, LENGTH = 2M /* to 0x00003FFF = 0x007FFFFF*/
++    RAM (xrw)  : ORIGIN = 0x38000000, LENGTH = 4M /* to 0x21FFFFFF = 0xFFFFFF */
+ }
+ ENTRY(Reset_Handler)
+ 
+diff --git a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/syscall.c b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/syscall.c
+index d3e4db23a..88e046134 100644
+--- a/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/syscall.c
++++ b/FreeRTOS/Demo/CORTEX_M3_MPS2_QEMU_GCC/syscall.c
+@@ -38,7 +38,8 @@ typedef struct UART_t
+     volatile uint32_t BAUDDIV;
+ } UART_t;
+ 
+-#define UART0_ADDR           ( ( UART_t * ) ( 0x40004000 ) )
++//#define UART0_ADDR           ( ( UART_t * ) ( 0x40004000 ) )
++#define UART0_ADDR           ( ( UART_t * ) ( 0x40200000 ) )
+ #define UART_DR( baseaddr )    ( *( unsigned int * ) ( baseaddr ) )
+ 
+ #define UART_STATE_TXFULL    ( 1 << 0 )
