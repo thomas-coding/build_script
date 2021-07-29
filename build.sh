@@ -34,6 +34,18 @@ nxp865_dir=${code_dir}/nxp865
 falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
 falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
 
+os_version=unknow
+function check_os_version()
+{
+    echo "check_os_version"
+    if grep -Eqi "Ubuntu 20." /etc/issue; then
+        echo "os ubuntu 20"
+        os_version=ubuntu20
+    elif grep -Eqi "Ubuntu 18." /etc/issue; then
+        echo "os ubuntu 18"
+        os_version=ubuntu18
+    fi
+}
 
 function do_add_swap()
 {
@@ -67,20 +79,35 @@ function do_install_package()
         source ~/.bashrc
     fi
 
-
-    # install package
-    echo "install package ..."
-    sudo apt-get -y install git ninja-build android-tools-adb android-tools-fastboot autoconf \
-    automake bc bison build-essential ccache cscope curl device-tree-compiler \
-    expect flex ftp-upload gdisk iasl libattr1-dev libcap-dev \
-    libfdt-dev libftdi-dev libglib2.0-dev libhidapi-dev libncurses5-dev \
-    libpixman-1-dev libssl-dev libtool make \
-    mtools netcat python-crypto python3-crypto python-pyelftools \
-    python3-pycryptodome python3-pyelftools python-serial python3-serial \
-    rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
-    libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
-    libssl-dev bison gcc-multilib zip openssh-server openssh-client apache2
-    #echo "y" | sudo apt-get install git
+    if [[ "${os_version}" = "ubuntu20" ]]; then
+        # install package
+        echo "ubuntu20 install package ..."
+        sudo apt-get -y install git ninja-build android-tools-adb android-tools-fastboot autoconf \
+        automake bc bison build-essential ccache cscope curl device-tree-compiler \
+        expect flex ftp-upload gdisk libattr1-dev libcap-dev \
+        libfdt-dev libftdi-dev libglib2.0-dev libhidapi-dev libncurses5-dev \
+        libpixman-1-dev libssl-dev libtool make \
+        mtools netcat python3-crypto \
+        python3-pycryptodome python3-pyelftools  python3-serial \
+        rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
+        libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
+        libssl-dev bison gcc-multilib zip openssh-server openssh-client apache2
+        #echo "y" | sudo apt-get install git
+    elif [[ "${os_version}" = "ubuntu18" ]]; then
+        # install package
+        echo "ubuntu18 install package ..."
+        sudo apt-get -y install git ninja-build android-tools-adb android-tools-fastboot autoconf \
+        automake bc bison build-essential ccache cscope curl device-tree-compiler \
+        expect flex ftp-upload gdisk iasl libattr1-dev libcap-dev \
+        libfdt-dev libftdi-dev libglib2.0-dev libhidapi-dev libncurses5-dev \
+        libpixman-1-dev libssl-dev libtool make \
+        mtools netcat python-crypto python3-crypto python-pyelftools \
+        python3-pycryptodome python3-pyelftools python-serial python3-serial \
+        rsync unzip uuid-dev xdg-utils xterm xz-utils zlib1g-dev python3-pip cmake \
+        libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
+        libssl-dev bison gcc-multilib zip openssh-server openssh-client apache2
+        #echo "y" | sudo apt-get install git
+    fi
 
     # config git
     git config --global user.email "jinping.wu@verisilicon.com"
@@ -493,6 +520,9 @@ function do_test()
     #patch -d ${optee_armv8_dir}/build -p1 < ${shell_folder}/modules/opteev8/patch/build.diff
     #sleep 10s
 }
+
+# prebuild
+check_os_version
 
 #parse option
 start_time=${SECONDS}
