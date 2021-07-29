@@ -179,7 +179,7 @@ function do_get_and_build_freertos()
 
     mkdir -p "${freertos_dir}"
     cd "${freertos_dir}" || exit
-    git clone https://github.com/FreeRTOS/FreeRTOS.git --recurse-submodules
+    git clone https://github.com/FreeRTOS/FreeRTOS.git --recurse-submodules -b 202104.00
     cd "${freertos_dir}"/FreeRTOS || exit
 
     # creat build.sh runqemu.sh rungdb.sh
