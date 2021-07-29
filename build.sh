@@ -470,6 +470,7 @@ function usage()
     echo "    --a:              Build all"
     echo "    --toolchains:     install toolchains, cmake"
     echo "    --env:            Setup environment, include packages , toolchains cmake"
+    echo "    --package:        Install packages"
     echo "    --qemu:           Build qemu"
     echo "    --tfm:            Build tfm"
     echo "    --tfm_fwu:        Build tfm_fwu"
@@ -521,6 +522,9 @@ for arg in "$@"; do
             do_install_package
             do_install_toolchain
             do_install_cmake
+            shift;;
+        --package)
+            do_install_package
             shift;;
         --toolchains)
             do_install_toolchain
