@@ -1,0 +1,15 @@
+diff --git a/plat/qemu/qemu/include/platform_def.h b/plat/qemu/qemu/include/platform_def.h
+index ed4b748..1bb655d 100644
+--- a/plat/qemu/qemu/include/platform_def.h
++++ b/plat/qemu/qemu/include/platform_def.h
+@@ -186,8 +186,8 @@
+ #define PLAT_QEMU_BOOT_UART_BASE	UART0_BASE
+ #define PLAT_QEMU_BOOT_UART_CLK_IN_HZ	UART0_CLK_IN_HZ
+ 
+-#define PLAT_QEMU_CRASH_UART_BASE	UART1_BASE
+-#define PLAT_QEMU_CRASH_UART_CLK_IN_HZ	UART1_CLK_IN_HZ
++#define PLAT_QEMU_CRASH_UART_BASE	UART0_BASE
++#define PLAT_QEMU_CRASH_UART_CLK_IN_HZ	UART0_CLK_IN_HZ
+ 
+ #define PLAT_QEMU_CONSOLE_BAUDRATE	115200
+ 

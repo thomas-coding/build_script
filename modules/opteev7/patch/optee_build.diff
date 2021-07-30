@@ -1,0 +1,45 @@
+diff --git a/qemu.mk b/qemu.mk
+index 038e982..1052f28 100644
+--- a/qemu.mk
++++ b/qemu.mk
+@@ -166,21 +166,34 @@ QEMU_SMP ?= 2
+ .PHONY: run-only
+ run-only:
+ 	ln -sf $(ROOT)/out-br/images/rootfs.cpio.gz $(BINARIES_PATH)/
+-	$(call check-terminal)
+ 	$(call run-help)
+-	$(call launch-terminal,54320,"Normal World")
+-	$(call launch-terminal,54321,"Secure World")
+-	$(call wait-for-ports,54320,54321)
+ 	cd $(BINARIES_PATH) && $(QEMU_PATH)/arm-softmmu/qemu-system-arm \
+ 		-nographic \
+-		-serial tcp:localhost:54320 -serial tcp:localhost:54321 \
+ 		-smp $(QEMU_SMP) \
+-		-s -S -machine virt,secure=on -cpu cortex-a15 \
++		-machine virt,secure=on -cpu cortex-a15 \
+ 		-d unimp -semihosting-config enable,target=native \
+ 		-m 1057 \
+ 		-bios bl1.bin \
+ 		$(QEMU_EXTRA_ARGS)
+ 
++.PHONY: run-only-gdb
++run-only-gdb:
++	ln -sf $(ROOT)/out-br/images/rootfs.cpio.gz $(BINARIES_PATH)/
++	$(call run-help)
++	cd $(BINARIES_PATH) && $(QEMU_PATH)/arm-softmmu/qemu-system-arm \
++		-nographic \
++		-smp $(QEMU_SMP) \
++		-machine virt,secure=on -cpu cortex-a15 \
++		-d unimp -semihosting-config enable,target=native \
++		-m 1057 \
++		-bios bl1.bin \
++		-initrd rootfs.cpio.gz \
++		-kernel zImage -no-acpi \
++		-append 'console=ttyAMA0,38400 keep_bootcon root=/dev/vda2' \
++		$(QEMU_EXTRA_ARGS)	\
++		-append nokaslr \
++		-s -S
++
+ ifneq ($(filter check,$(MAKECMDGOALS)),)
+ CHECK_DEPS := all
+ endif

@@ -1,0 +1,57 @@
+diff --git a/core/arch/arm/kernel/boot.c b/core/arch/arm/kernel/boot.c
+index 891d2a5..ef38d95 100644
+--- a/core/arch/arm/kernel/boot.c
++++ b/core/arch/arm/kernel/boot.c
+@@ -1229,7 +1229,7 @@ void __weak paged_init_primary(unsigned long fdt)
+ 	tpm_map_log_area(get_external_dt());
+ 	discover_nsec_memory();
+ 	update_external_dt();
+-	configure_console_from_dt();
++	//configure_console_from_dt();
+ 
+ 	IMSG("OP-TEE version: %s", core_v_str);
+ 	IMSG("Primary CPU initializing");
+diff --git a/core/arch/arm/plat-vexpress/conf.mk b/core/arch/arm/plat-vexpress/conf.mk
+index 26b9f51..99b16fb 100644
+--- a/core/arch/arm/plat-vexpress/conf.mk
++++ b/core/arch/arm/plat-vexpress/conf.mk
+@@ -118,3 +118,16 @@ CFG_TEE_SDP_MEM_SIZE ?= 0x00400000
+ $(call force,CFG_DT,y)
+ CFG_DTB_MAX_SIZE ?= 0x100000
+ endif
++
++
++
++# For gdb debug, disable ASLR
++CFG_CORE_ASLR=n
++CFG_TA_ASLR=n
++
++# Enable debug, disable core debug because of compile error
++#CFG_TEE_CORE_DEBUG=1
++CFG_TEE_CORE_LOG_LEVEL=4
++
++# Enable test ta
++CFG_TEE_CORE_EMBED_INTERNAL_TESTS=y
+\ No newline at end of file
+diff --git a/core/arch/arm/plat-vexpress/platform_config.h b/core/arch/arm/plat-vexpress/platform_config.h
+index 206885c..905f07e 100644
+--- a/core/arch/arm/plat-vexpress/platform_config.h
++++ b/core/arch/arm/plat-vexpress/platform_config.h
+@@ -62,7 +62,7 @@
+ #define IT_UART1		40
+ #define IT_PCSC			37
+ 
+-#define CONSOLE_UART_BASE	UART1_BASE
++#define CONSOLE_UART_BASE	UART0_BASE
+ #define IT_CONSOLE_UART		IT_UART1
+ 
+ #elif defined(PLATFORM_FLAVOR_qemu_armv8a)
+@@ -73,7 +73,7 @@
+ 
+ #define IT_UART1		40
+ 
+-#define CONSOLE_UART_BASE	UART1_BASE
++#define CONSOLE_UART_BASE	UART0_BASE
+ #define IT_CONSOLE_UART		IT_UART1
+ 
+ #else
