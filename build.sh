@@ -316,6 +316,14 @@ function do_get_and_build_optee_armv7()
     cd "${optee_armv7_dir}" || exit || exit
     echo "y" | repo init -u https://github.com/OP-TEE/manifest.git -m default.xml -b 3.12.0
     repo sync
+
+    # Patch
+    # Patch from git dir run 'git diff > xxx.diff'
+    patch -d "${optee_armv7_dir}"/build -p1 < "${shell_folder}"/modules/opteev7/patch/build.diff
+    patch -d "${optee_armv7_dir}"/optee_client -p1 < "${shell_folder}"/modules/opteev7/patch/optee_client.diff
+    patch -d "${optee_armv7_dir}"/optee_os -p1 < "${shell_folder}"/modules/opteev7/patch/optee_os.diff
+    patch -d "${optee_armv7_dir}"/trusted-firmware-a -p1 < "${shell_folder}"/modules/opteev7/patch/trusted-firmware-a.diff
+
     cd "${optee_armv7_dir}"/build || exit
     optee_get_toolchain
     #make toolchains
