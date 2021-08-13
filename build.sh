@@ -34,6 +34,7 @@ nxp865_dir=${code_dir}/nxp865
 falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
 falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
 alius_dir=${code_dir}/alius
+alius_csd_dir=${code_dir}/alius_csd
 
 os_version=unknow
 function check_os_version()
@@ -488,6 +489,44 @@ function do_get_and_build_alius()
     cp "${shell_folder}"/modules/alius/alius_build.sh  "${alius_dir}"/build.sh
 }
 
+function do_get_alius_csd()
+{
+    if [[ -d ${alius_csd_dir} ]]; then
+        echo "alius csd mirror already exist ..."
+        return
+    fi
+
+    mkdir -p "${alius_csd_dir}"
+    cd "${alius_csd_dir}" || exit
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/u-boot"
+    cd "${alius_csd_dir}/u-boot" || exit
+    git checkout origin/alius-fpga
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/trusted-firmware-m"
+    cd "${alius_csd_dir}/trusted-firmware-m" || exit
+    git checkout  origin/alius-fpga
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/trusted-firmware-a"
+    cd "${alius_csd_dir}/trusted-firmware-a" || exit
+    git checkout  origin/alius-fpga
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/linux"
+    cd "${alius_csd_dir}/linux" || exit
+    git checkout  origin/alius-fpga
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/ipd-release"
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/freertos"
+    cd "${alius_csd_dir}/linux" || exit
+    git checkout  origin/alius-fpag-vsi-m33
+
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m33"
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m0plus"
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-a32"
+
+}
+
 
 function do_create_git_repository()
 {
@@ -541,6 +580,7 @@ function usage()
     echo "    --falcon_qc:      Build falcon qemu coreboot"
     echo "    --falcon_qemu:    Build falcon qemu uboot"
     echo "    --alius:          Build alius"
+    echo "    --alius_csd:      Get alius csd mirror"
     echo "    --git:            Create git repository 'repository1' "
     echo "    --apache:         Create apache server "
     echo "    --vnc:            Install vnc server, only cmdline mode "
@@ -625,6 +665,9 @@ for arg in "$@"; do
             shift;;
         --alius)
             do_get_and_build_alius
+            shift;;
+        --alius_csd)
+            do_get_alius_csd
             shift;;
         --git)
             do_create_git_repository
