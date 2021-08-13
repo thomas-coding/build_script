@@ -33,6 +33,7 @@ trusty_dir=${code_dir}/trusty
 nxp865_dir=${code_dir}/nxp865
 falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
 falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
+alius_dir=${code_dir}/alius
 
 os_version=unknow
 function check_os_version()
@@ -465,6 +466,29 @@ function do_get_and_build_falcon_qemu_uboot()
 }
 
 
+
+function do_get_and_build_alius()
+{
+    if [[ -d ${alius_dir} ]]; then
+        echo "alius already exist ..."
+        return
+    fi
+
+    mkdir -p "${alius_dir}"
+    cd "${alius_dir}" || exit
+    repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo -b spsd/master -m Alius/linuxsdk.xml
+
+    repo sync -j4 -c
+
+    # Build
+    cd "${alius_dir}"/build || exit
+    ./build.sh alius
+
+    # Creat build.sh
+    cp "${shell_folder}"/modules/alius/alius_build.sh  "${alius_dir}"/build.sh
+}
+
+
 function do_create_git_repository()
 {
     git init --bare /gitshop/repository1.git
@@ -516,6 +540,7 @@ function usage()
     echo "    --nxp865:         Build nxp865 with freertos and optee"
     echo "    --falcon_qc:      Build falcon qemu coreboot"
     echo "    --falcon_qemu:    Build falcon qemu uboot"
+    echo "    --alius:          Build alius"
     echo "    --git:            Create git repository 'repository1' "
     echo "    --apache:         Create apache server "
     echo "    --vnc:            Install vnc server, only cmdline mode "
@@ -597,6 +622,9 @@ for arg in "$@"; do
             shift;;
         --falcon_qemu)
             do_get_and_build_falcon_qemu_uboot
+            shift;;
+        --alius)
+            do_get_and_build_alius
             shift;;
         --git)
             do_create_git_repository
