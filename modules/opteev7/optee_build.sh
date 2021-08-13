@@ -10,6 +10,7 @@ function usage()
     echo "    linux:            Build linux"
     echo "    optee_client:     Build optee client"
     echo "    buildroot:        Build buildroot"
+    echo "    qemu:             Build qemu"
     echo "    -h|--help:        Show this help information"
 }
 
@@ -38,6 +39,9 @@ for arg in "$@"; do
             shift;;
         buildroot)
             make -j "$(nproc)" buildroot
+            shift;;
+        qemu)
+            make -j "$(nproc)" qemu
             shift;;
         -h|--help)
             usage
