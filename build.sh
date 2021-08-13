@@ -500,31 +500,48 @@ function do_get_alius_csd()
     cd "${alius_csd_dir}" || exit
 
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/u-boot"
-    cd "${alius_csd_dir}/u-boot" || exit
-    git checkout origin/alius-fpga
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/trusted-firmware-m"
-    cd "${alius_csd_dir}/trusted-firmware-m" || exit
-    git checkout  origin/alius-fpga
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/trusted-firmware-a"
-    cd "${alius_csd_dir}/trusted-firmware-a" || exit
-    git checkout  origin/alius-fpga
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/linux"
-    cd "${alius_csd_dir}/linux" || exit
-    git checkout  origin/alius-fpga
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/ipd-release"
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/freertos"
-    cd "${alius_csd_dir}/linux" || exit
-    git checkout  origin/alius-fpag-vsi-m33
-
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m33"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m0plus"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-a32"
+    #git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/github/qemu/qemu"
+    git clone https://gitlab.com/qemu-project/qemu.git
 
+    cd "${alius_csd_dir}/u-boot" || exit
+    git checkout origin/alius-fpga
+
+    cd "${alius_csd_dir}/trusted-firmware-m" || exit
+    git checkout  origin/alius-fpga
+
+    cd "${alius_csd_dir}/trusted-firmware-a" || exit
+    git checkout  origin/alius-fpga
+
+    cd "${alius_csd_dir}/linux" || exit
+    git checkout  origin/alius-fpga
+
+    cd "${alius_csd_dir}/linux" || exit
+    git checkout  origin/alius-fpag-vsi-m33
+
+    # Get qemu v5.2.0, patch alius machine, build 
+    cd "${alius_csd_dir}/qemu" || exit
+    git checkout -b my5.2.2 v5.2.0
+    git submodule init
+    git submodule update --recursive
+    
+    # Patch for alius machine
+    patch -d "${alius_csd_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_qemu.diff
+    #git fetch "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/github/qemu/qemu" refs/changes/48/7848/3 && git cherry-pick FETCH_HEAD
+    ./configure --target-list=arm-softmmu --enable-debug
+    make -j "$(nproc)"
+
+    # Creat build.sh runqemu.sh rungdb.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_build.sh  "${alius_csd_dir}"/build.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu.sh  "${alius_csd_dir}"/runqemu.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb.sh  "${alius_csd_dir}"/rungdb.sh
 }
 
 

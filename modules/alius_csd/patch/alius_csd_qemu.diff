@@ -1,0 +1,3769 @@
+From 622c2a7ade6847bfa550a7899b22379ad7a5d6ab Mon Sep 17 00:00:00 2001
+From: Cheng Wei <Wei.Cheng@verisilicon.com>
+Date: Fri, 23 Jul 2021 15:11:50 +0800
+Subject: [PATCH] arm: add alius m33 machine
+
+merge from CSD https://gitlab.verisilicon.com/qemu/qemu.git
+branch alius-las
+
+Change-Id: I6b31f77cd9b54b6f0a03231bf0cf5f8e89a1aa87
+---
+
+diff --git a/default-configs/devices/arm-softmmu.mak b/default-configs/devices/arm-softmmu.mak
+index 08a3212..15e3d00 100644
+--- a/default-configs/devices/arm-softmmu.mak
++++ b/default-configs/devices/arm-softmmu.mak
+@@ -43,3 +43,5 @@
+ CONFIG_FSL_IMX6UL=y
+ CONFIG_SEMIHOSTING=y
+ CONFIG_ALLWINNER_H3=y
++CONFIG_ALIUS=y
++CONFIG_ALIUS_LAS=y
+\ No newline at end of file
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index e69a900..7d392a5 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -28,6 +28,41 @@
+     select ACPI_NVDIMM
+     select ACPI_APEI
+ 
++config ALIUS
++    bool
++    imply PCI_DEVICES
++    imply TEST_DEVICES
++    imply VFIO_AMD_XGBE
++    imply VFIO_PLATFORM
++    imply VFIO_XGMAC
++    imply TPM_TIS_SYSBUS
++    select ARM_GIC
++    select ACPI
++    select ARM_SMMUV3
++    select GPIO_KEY
++    select FW_CFG_DMA
++    select PCI_EXPRESS
++    select PCI_EXPRESS_GENERIC_BRIDGE
++    select PFLASH_CFI01
++    select PL011 # UART
++    select PL031 # RTC
++    select PL061 # GPIO
++    select PLATFORM_BUS
++    select SMBIOS
++    select VIRTIO_MMIO
++    select ACPI_PCI
++    select MEM_DEVICE
++    select DIMM
++    select ACPI_MEMORY_HOTPLUG
++    select ACPI_HW_REDUCED
++    select ACPI_NVDIMM
++    select ACPI_APEI
++
++config ALIUS_LAS
++    bool
++    select OR_IRQ
++    select SPLIT_IRQ
++
+ config CHEETAH
+     bool
+     select OMAP
+diff --git a/hw/arm/alius-armsse.c b/hw/arm/alius-armsse.c
+new file mode 100755
+index 0000000..9fc9405
+--- /dev/null
++++ b/hw/arm/alius-armsse.c
+@@ -0,0 +1,1169 @@
++/*
++ * Arm SSE (Subsystems for Embedded): IoTKit
++ *
++ * Copyright (c) 2018 Linaro Limited
++ * Written by Peter Maydell
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "qemu/log.h"
++#include "qemu/module.h"
++#include "qemu/bitops.h"
++#include "qapi/error.h"
++#include "trace.h"
++#include "hw/sysbus.h"
++#include "migration/vmstate.h"
++#include "hw/registerfields.h"
++#include "hw/arm/alius-armsse.h"
++#include "hw/arm/boot.h"
++#include "hw/irq.h"
++
++/* Format of the System Information block SYS_CONFIG register */
++typedef enum SysConfigFormat {
++    IoTKitFormat,
++    SSE200Format,
++} SysConfigFormat;
++
++struct ARMSSEInfo {
++    const char *name;
++    int sram_banks;
++    int num_cpus;
++    uint32_t sys_version;
++    uint32_t cpuwait_rst;
++    SysConfigFormat sys_config_format;
++    bool has_mhus;
++    bool has_ppus;
++    bool has_cachectrl;
++    bool has_cpusecctrl;
++    bool has_cpuid;
++    Property *props;
++};
++
++static Property iotkit_properties[] = {
++    DEFINE_PROP_LINK("memory", ARMSSE, board_memory, TYPE_MEMORY_REGION,
++                     MemoryRegion *),
++    DEFINE_PROP_UINT32("EXP_NUMIRQ", ARMSSE, exp_numirq, 64),
++    DEFINE_PROP_UINT32("MAINCLK", ARMSSE, mainclk_frq, 0),
++    DEFINE_PROP_UINT32("SRAM_ADDR_WIDTH", ARMSSE, sram_addr_width, 15),
++    DEFINE_PROP_UINT32("init-svtor", ARMSSE, init_svtor, 0x20400000),
++    DEFINE_PROP_BOOL("CPU0_FPU", ARMSSE, cpu_fpu[0], true),
++    DEFINE_PROP_BOOL("CPU0_DSP", ARMSSE, cpu_dsp[0], true),
++    DEFINE_PROP_END_OF_LIST()
++};
++
++static Property armsse_properties[] = {
++    DEFINE_PROP_LINK("memory", ARMSSE, board_memory, TYPE_MEMORY_REGION,
++                     MemoryRegion *),
++    DEFINE_PROP_UINT32("EXP_NUMIRQ", ARMSSE, exp_numirq, 64),
++    DEFINE_PROP_UINT32("MAINCLK", ARMSSE, mainclk_frq, 0),
++    DEFINE_PROP_UINT32("SRAM_ADDR_WIDTH", ARMSSE, sram_addr_width, 15),
++    DEFINE_PROP_UINT32("init-svtor", ARMSSE, init_svtor, 0x20400000),
++    DEFINE_PROP_BOOL("CPU0_FPU", ARMSSE, cpu_fpu[0], false),
++    DEFINE_PROP_BOOL("CPU0_DSP", ARMSSE, cpu_dsp[0], false),
++    DEFINE_PROP_BOOL("CPU1_FPU", ARMSSE, cpu_fpu[1], true),
++    DEFINE_PROP_BOOL("CPU1_DSP", ARMSSE, cpu_dsp[1], true),
++    DEFINE_PROP_END_OF_LIST()
++};
++
++static const ARMSSEInfo armsse_variants[] = {
++    {
++        .name = TYPE_IOTKIT,
++        .sram_banks = 1,
++        .num_cpus = 1,
++        .sys_version = 0x41743,
++        .cpuwait_rst = 0,
++        .sys_config_format = IoTKitFormat,
++        .has_mhus = false,
++        .has_ppus = false,
++        .has_cachectrl = false,
++        .has_cpusecctrl = false,
++        .has_cpuid = false,
++        .props = iotkit_properties,
++    },
++    {
++        .name = TYPE_SSE200,
++        .sram_banks = 4,
++        .num_cpus = 2,
++        .sys_version = 0x22041743,
++        .cpuwait_rst = 2,
++        .sys_config_format = SSE200Format,
++        .has_mhus = true,
++        .has_ppus = true,
++        .has_cachectrl = true,
++        .has_cpusecctrl = true,
++        .has_cpuid = true,
++        .props = armsse_properties,
++    },
++};
++
++static uint32_t armsse_sys_config_value(ARMSSE *s, const ARMSSEInfo *info)
++{
++    /* Return the SYS_CONFIG value for this SSE */
++    uint32_t sys_config;
++
++    switch (info->sys_config_format) {
++    case IoTKitFormat:
++        sys_config = 0;
++        sys_config = deposit32(sys_config, 0, 4, info->sram_banks);
++        sys_config = deposit32(sys_config, 4, 4, s->sram_addr_width - 12);
++        break;
++    case SSE200Format:
++        sys_config = 0;
++        sys_config = deposit32(sys_config, 0, 4, info->sram_banks);
++        sys_config = deposit32(sys_config, 4, 5, s->sram_addr_width);
++        sys_config = deposit32(sys_config, 24, 4, 2);
++        if (info->num_cpus > 1) {
++            sys_config = deposit32(sys_config, 10, 1, 1);
++            sys_config = deposit32(sys_config, 20, 4, info->sram_banks - 1);
++            sys_config = deposit32(sys_config, 28, 4, 2);
++        }
++        break;
++    default:
++        g_assert_not_reached();
++    }
++    return sys_config;
++}
++
++/* Clock frequency in HZ of the 32KHz "slow clock" */
++#define S32KCLK (32 * 1000)
++
++/* Is internal IRQ n shared between CPUs in a multi-core SSE ? */
++static bool irq_is_common[32] = {
++    [0 ... 5] = true,
++    /* 6, 7: per-CPU MHU interrupts */
++    [8 ... 12] = true,
++    /* 13: per-CPU icache interrupt */
++    /* 14: reserved */
++    [15 ... 20] = true,
++    /* 21: reserved */
++    [22 ... 26] = true,
++    /* 27: reserved */
++    /* 28, 29: per-CPU CTI interrupts */
++    /* 30, 31: reserved */
++};
++
++/*
++ * Create an alias region in @container of @size bytes starting at @base
++ * which mirrors the memory starting at @orig.
++ */
++static void make_alias(ARMSSE *s, MemoryRegion *mr, MemoryRegion *container,
++                       const char *name, hwaddr base, hwaddr size, hwaddr orig)
++{
++    memory_region_init_alias(mr, NULL, name, container, orig, size);
++    /* The alias is even lower priority than unimplemented_device regions */
++    memory_region_add_subregion_overlap(container, base, mr, -1500);
++}
++
++static void irq_status_forwarder(void *opaque, int n, int level)
++{
++    qemu_irq destirq = opaque;
++
++    qemu_set_irq(destirq, level);
++}
++
++static void nsccfg_handler(void *opaque, int n, int level)
++{
++    ARMSSE *s = ARM_SSE(opaque);
++
++    s->nsccfg = level;
++}
++
++static void armsse_forward_ppc(ARMSSE *s, const char *ppcname, int ppcnum)
++{
++    /* Each of the 4 AHB and 4 APB PPCs that might be present in a
++     * system using the ARMSSE has a collection of control lines which
++     * are provided by the security controller and which we want to
++     * expose as control lines on the ARMSSE device itself, so the
++     * code using the ARMSSE can wire them up to the PPCs.
++     */
++    SplitIRQ *splitter = &s->ppc_irq_splitter[ppcnum];
++    DeviceState *armssedev = DEVICE(s);
++    DeviceState *dev_secctl = DEVICE(&s->secctl);
++    DeviceState *dev_splitter = DEVICE(splitter);
++    char *name;
++
++    name = g_strdup_printf("%s_nonsec", ppcname);
++    qdev_pass_gpios(dev_secctl, armssedev, name);
++    g_free(name);
++    name = g_strdup_printf("%s_ap", ppcname);
++    qdev_pass_gpios(dev_secctl, armssedev, name);
++    g_free(name);
++    name = g_strdup_printf("%s_irq_enable", ppcname);
++    qdev_pass_gpios(dev_secctl, armssedev, name);
++    g_free(name);
++    name = g_strdup_printf("%s_irq_clear", ppcname);
++    qdev_pass_gpios(dev_secctl, armssedev, name);
++    g_free(name);
++
++    /* irq_status is a little more tricky, because we need to
++     * split it so we can send it both to the security controller
++     * and to our OR gate for the NVIC interrupt line.
++     * Connect up the splitter's outputs, and create a GPIO input
++     * which will pass the line state to the input splitter.
++     */
++    name = g_strdup_printf("%s_irq_status", ppcname);
++    qdev_connect_gpio_out(dev_splitter, 0,
++                          qdev_get_gpio_in_named(dev_secctl,
++                                                 name, 0));
++    qdev_connect_gpio_out(dev_splitter, 1,
++                          qdev_get_gpio_in(DEVICE(&s->ppc_irq_orgate), ppcnum));
++    s->irq_status_in[ppcnum] = qdev_get_gpio_in(dev_splitter, 0);
++    qdev_init_gpio_in_named_with_opaque(armssedev, irq_status_forwarder,
++                                        s->irq_status_in[ppcnum], name, 1);
++    g_free(name);
++}
++
++static void armsse_forward_sec_resp_cfg(ARMSSE *s)
++{
++    /* Forward the 3rd output from the splitter device as a
++     * named GPIO output of the armsse object.
++     */
++    DeviceState *dev = DEVICE(s);
++    DeviceState *dev_splitter = DEVICE(&s->sec_resp_splitter);
++
++    qdev_init_gpio_out_named(dev, &s->sec_resp_cfg, "sec_resp_cfg", 1);
++    s->sec_resp_cfg_in = qemu_allocate_irq(irq_status_forwarder,
++                                           s->sec_resp_cfg, 1);
++    qdev_connect_gpio_out(dev_splitter, 2, s->sec_resp_cfg_in);
++}
++
++static void armsse_init(Object *obj)
++{
++    ARMSSE *s = ARM_SSE(obj);
++    ARMSSEClass *asc = ARM_SSE_GET_CLASS(obj);
++    const ARMSSEInfo *info = asc->info;
++    int i;
++
++    assert(info->sram_banks <= MAX_SRAM_BANKS);
++    assert(info->num_cpus <= SSE_MAX_CPUS);
++
++    memory_region_init(&s->container, obj, "armsse-container", UINT64_MAX);
++
++    for (i = 0; i < info->num_cpus; i++) {
++        /*
++         * We put each CPU in its own cluster as they are logically
++         * distinct and may be configured differently.
++         */
++        char *name;
++
++        name = g_strdup_printf("cluster%d", i);
++        object_initialize_child(obj, name, &s->cluster[i], TYPE_CPU_CLUSTER);
++        qdev_prop_set_uint32(DEVICE(&s->cluster[i]), "cluster-id", i);
++        g_free(name);
++
++        name = g_strdup_printf("armv7m%d", i);
++        object_initialize_child(OBJECT(&s->cluster[i]), name, &s->armv7m[i],
++                                TYPE_ARMV7M);
++        qdev_prop_set_string(DEVICE(&s->armv7m[i]), "cpu-type",
++                             ARM_CPU_TYPE_NAME("cortex-m33"));
++        g_free(name);
++        name = g_strdup_printf("arm-sse-cpu-container%d", i);
++        memory_region_init(&s->cpu_container[i], obj, name, UINT64_MAX);
++        g_free(name);
++        if (i > 0) {
++            name = g_strdup_printf("arm-sse-container-alias%d", i);
++            memory_region_init_alias(&s->container_alias[i - 1], obj,
++                                     name, &s->container, 0, UINT64_MAX);
++            g_free(name);
++        }
++    }
++
++    object_initialize_child(obj, "secctl", &s->secctl, TYPE_IOTKIT_SECCTL);
++    object_initialize_child(obj, "apb-ppc0", &s->apb_ppc0, TYPE_TZ_PPC);
++    object_initialize_child(obj, "apb-ppc1", &s->apb_ppc1, TYPE_TZ_PPC);
++    for (i = 0; i < info->sram_banks; i++) {
++        char *name = g_strdup_printf("mpc%d", i);
++        object_initialize_child(obj, name, &s->mpc[i], TYPE_TZ_MPC);
++        g_free(name);
++    }
++    object_initialize_child(obj, "mpc-irq-orgate", &s->mpc_irq_orgate,
++                            TYPE_OR_IRQ);
++
++    for (i = 0; i < IOTS_NUM_EXP_MPC + info->sram_banks; i++) {
++        char *name = g_strdup_printf("mpc-irq-splitter-%d", i);
++        SplitIRQ *splitter = &s->mpc_irq_splitter[i];
++
++        object_initialize_child(obj, name, splitter, TYPE_SPLIT_IRQ);
++        g_free(name);
++    }
++    object_initialize_child(obj, "timer0", &s->timer0, TYPE_CMSDK_APB_TIMER);
++    object_initialize_child(obj, "timer1", &s->timer1, TYPE_CMSDK_APB_TIMER);
++    object_initialize_child(obj, "s32ktimer", &s->s32ktimer,
++                            TYPE_CMSDK_APB_TIMER);
++    object_initialize_child(obj, "dualtimer", &s->dualtimer,
++                            TYPE_CMSDK_APB_DUALTIMER);
++    object_initialize_child(obj, "s32kwatchdog", &s->s32kwatchdog,
++                            TYPE_CMSDK_APB_WATCHDOG);
++    object_initialize_child(obj, "nswatchdog", &s->nswatchdog,
++                            TYPE_CMSDK_APB_WATCHDOG);
++    object_initialize_child(obj, "swatchdog", &s->swatchdog,
++                            TYPE_CMSDK_APB_WATCHDOG);
++    object_initialize_child(obj, "armsse-sysctl", &s->sysctl,
++                            TYPE_IOTKIT_SYSCTL);
++    object_initialize_child(obj, "armsse-sysinfo", &s->sysinfo,
++                            TYPE_IOTKIT_SYSINFO);
++    if (info->has_mhus) {
++        object_initialize_child(obj, "mhu0", &s->mhu[0], TYPE_ARMSSE_MHU);
++        object_initialize_child(obj, "mhu1", &s->mhu[1], TYPE_ARMSSE_MHU);
++    }
++    if (info->has_ppus) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("CPU%dCORE_PPU", i);
++            int ppuidx = CPU0CORE_PPU + i;
++
++            object_initialize_child(obj, name, &s->ppu[ppuidx],
++                                    TYPE_UNIMPLEMENTED_DEVICE);
++            g_free(name);
++        }
++        object_initialize_child(obj, "DBG_PPU", &s->ppu[DBG_PPU],
++                                TYPE_UNIMPLEMENTED_DEVICE);
++        for (i = 0; i < info->sram_banks; i++) {
++            char *name = g_strdup_printf("RAM%d_PPU", i);
++            int ppuidx = RAM0_PPU + i;
++
++            object_initialize_child(obj, name, &s->ppu[ppuidx],
++                                    TYPE_UNIMPLEMENTED_DEVICE);
++            g_free(name);
++        }
++    }
++    if (info->has_cachectrl) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("cachectrl%d", i);
++
++            object_initialize_child(obj, name, &s->cachectrl[i],
++                                    TYPE_UNIMPLEMENTED_DEVICE);
++            g_free(name);
++        }
++    }
++    if (info->has_cpusecctrl) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("cpusecctrl%d", i);
++
++            object_initialize_child(obj, name, &s->cpusecctrl[i],
++                                    TYPE_UNIMPLEMENTED_DEVICE);
++            g_free(name);
++        }
++    }
++    if (info->has_cpuid) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("cpuid%d", i);
++
++            object_initialize_child(obj, name, &s->cpuid[i],
++                                    TYPE_ARMSSE_CPUID);
++            g_free(name);
++        }
++    }
++    object_initialize_child(obj, "nmi-orgate", &s->nmi_orgate, TYPE_OR_IRQ);
++    object_initialize_child(obj, "ppc-irq-orgate", &s->ppc_irq_orgate,
++                            TYPE_OR_IRQ);
++    object_initialize_child(obj, "sec-resp-splitter", &s->sec_resp_splitter,
++                            TYPE_SPLIT_IRQ);
++    for (i = 0; i < ARRAY_SIZE(s->ppc_irq_splitter); i++) {
++        char *name = g_strdup_printf("ppc-irq-splitter-%d", i);
++        SplitIRQ *splitter = &s->ppc_irq_splitter[i];
++
++        object_initialize_child(obj, name, splitter, TYPE_SPLIT_IRQ);
++        g_free(name);
++    }
++    if (info->num_cpus > 1) {
++        for (i = 0; i < ARRAY_SIZE(s->cpu_irq_splitter); i++) {
++            if (irq_is_common[i]) {
++                char *name = g_strdup_printf("cpu-irq-splitter%d", i);
++                SplitIRQ *splitter = &s->cpu_irq_splitter[i];
++
++                object_initialize_child(obj, name, splitter, TYPE_SPLIT_IRQ);
++                g_free(name);
++            }
++        }
++    }
++}
++
++static void armsse_exp_irq(void *opaque, int n, int level)
++{
++    qemu_irq *irqarray = opaque;
++
++    qemu_set_irq(irqarray[n], level);
++}
++
++static void armsse_mpcexp_status(void *opaque, int n, int level)
++{
++    ARMSSE *s = ARM_SSE(opaque);
++    qemu_set_irq(s->mpcexp_status_in[n], level);
++}
++
++static qemu_irq armsse_get_common_irq_in(ARMSSE *s, int irqno)
++{
++    /*
++     * Return a qemu_irq which can be used to signal IRQ n to
++     * all CPUs in the SSE.
++     */
++    ARMSSEClass *asc = ARM_SSE_GET_CLASS(s);
++    const ARMSSEInfo *info = asc->info;
++
++    assert(irq_is_common[irqno]);
++
++    if (info->num_cpus == 1) {
++        /* Only one CPU -- just connect directly to it */
++        return qdev_get_gpio_in(DEVICE(&s->armv7m[0]), irqno);
++    } else {
++        /* Connect to the splitter which feeds all CPUs */
++        return qdev_get_gpio_in(DEVICE(&s->cpu_irq_splitter[irqno]), 0);
++    }
++}
++
++static void map_ppu(ARMSSE *s, int ppuidx, const char *name, hwaddr addr)
++{
++    /* Map a PPU unimplemented device stub */
++    DeviceState *dev = DEVICE(&s->ppu[ppuidx]);
++
++    qdev_prop_set_string(dev, "name", name);
++    qdev_prop_set_uint64(dev, "size", 0x1000);
++    sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->ppu[ppuidx]), 0, addr);
++}
++
++static void armsse_realize(DeviceState *dev, Error **errp)
++{
++    ARMSSE *s = ARM_SSE(dev);
++    ARMSSEClass *asc = ARM_SSE_GET_CLASS(dev);
++    const ARMSSEInfo *info = asc->info;
++    int i;
++    MemoryRegion *mr;
++    Error *err = NULL;
++    SysBusDevice *sbd_apb_ppc0;
++    SysBusDevice *sbd_secctl;
++    DeviceState *dev_apb_ppc0;
++    DeviceState *dev_apb_ppc1;
++    DeviceState *dev_secctl;
++    DeviceState *dev_splitter;
++    uint32_t addr_width_max;
++
++    if (!s->board_memory) {
++        error_setg(errp, "memory property was not set");
++        return;
++    }
++
++    if (!s->mainclk_frq) {
++        error_setg(errp, "MAINCLK property was not set");
++        return;
++    }
++
++    assert(info->num_cpus <= SSE_MAX_CPUS);
++
++    /* max SRAM_ADDR_WIDTH: 24 - log2(SRAM_NUM_BANK) */
++    assert(is_power_of_2(info->sram_banks));
++    addr_width_max = 24 - ctz32(info->sram_banks);
++    if (s->sram_addr_width < 1 || s->sram_addr_width > addr_width_max) {
++        error_setg(errp, "SRAM_ADDR_WIDTH must be between 1 and %d",
++                   addr_width_max);
++        return;
++    }
++
++    /* Handling of which devices should be available only to secure
++     * code is usually done differently for M profile than for A profile.
++     * Instead of putting some devices only into the secure address space,
++     * devices exist in both address spaces but with hard-wired security
++     * permissions that will cause the CPU to fault for non-secure accesses.
++     *
++     * The ARMSSE has an IDAU (Implementation Defined Access Unit),
++     * which specifies hard-wired security permissions for different
++     * areas of the physical address space. For the ARMSSE IDAU, the
++     * top 4 bits of the physical address are the IDAU region ID, and
++     * if bit 28 (ie the lowest bit of the ID) is 0 then this is an NS
++     * region, otherwise it is an S region.
++     *
++     * The various devices and RAMs are generally all mapped twice,
++     * once into a region that the IDAU defines as secure and once
++     * into a non-secure region. They sit behind either a Memory
++     * Protection Controller (for RAM) or a Peripheral Protection
++     * Controller (for devices), which allow a more fine grained
++     * configuration of whether non-secure accesses are permitted.
++     *
++     * (The other place that guest software can configure security
++     * permissions is in the architected SAU (Security Attribution
++     * Unit), which is entirely inside the CPU. The IDAU can upgrade
++     * the security attributes for a region to more restrictive than
++     * the SAU specifies, but cannot downgrade them.)
++     *
++     * 0x10000000..0x1fffffff  alias of 0x00000000..0x0fffffff
++     * 0x20000000..0x2007ffff  32KB FPGA block RAM
++     * 0x30000000..0x3fffffff  alias of 0x20000000..0x2fffffff
++     * 0x40000000..0x4000ffff  base peripheral region 1
++     * 0x40010000..0x4001ffff  CPU peripherals (none for ARMSSE)
++     * 0x40020000..0x4002ffff  system control element peripherals
++     * 0x40080000..0x400fffff  base peripheral region 2
++     * 0x50000000..0x5fffffff  alias of 0x40000000..0x4fffffff
++     */
++
++    memory_region_add_subregion_overlap(&s->container, 0, s->board_memory, -2);
++
++    for (i = 0; i < info->num_cpus; i++) {
++        DeviceState *cpudev = DEVICE(&s->armv7m[i]);
++        Object *cpuobj = OBJECT(&s->armv7m[i]);
++        int j;
++        char *gpioname;
++
++        qdev_prop_set_uint32(cpudev, "num-irq", s->exp_numirq + 32);
++        /*
++         * In real hardware the initial Secure VTOR is set from the INITSVTOR*
++         * registers in the IoT Kit System Control Register block. In QEMU
++         * we set the initial value here, and also the reset value of the
++         * sysctl register, from this object's QOM init-svtor property.
++         * If the guest changes the INITSVTOR* registers at runtime then the
++         * code in iotkit-sysctl.c will update the CPU init-svtor property
++         * (which will then take effect on the next CPU warm-reset).
++         *
++         * Note that typically a board using the SSE-200 will have a system
++         * control processor whose boot firmware initializes the INITSVTOR*
++         * registers before powering up the CPUs. QEMU doesn't emulate
++         * the control processor, so instead we behave in the way that the
++         * firmware does: the initial value should be set by the board code
++         * (using the init-svtor property on the ARMSSE object) to match
++         * whatever its firmware does.
++         */
++        qdev_prop_set_uint32(cpudev, "init-svtor", s->init_svtor);
++        /*
++         * CPUs start powered down if the corresponding bit in the CPUWAIT
++         * register is 1. In real hardware the CPUWAIT register reset value is
++         * a configurable property of the SSE-200 (via the CPUWAIT0_RST and
++         * CPUWAIT1_RST parameters), but since all the boards we care about
++         * start CPU0 and leave CPU1 powered off, we hard-code that in
++         * info->cpuwait_rst for now. We can add QOM properties for this
++         * later if necessary.
++         */
++        if (extract32(info->cpuwait_rst, i, 1)) {
++            if (!object_property_set_bool(cpuobj, "start-powered-off", true,
++                                          errp)) {
++                return;
++            }
++        }
++        if (!s->cpu_fpu[i]) {
++            if (!object_property_set_bool(cpuobj, "vfp", false, errp)) {
++                return;
++            }
++        }
++        if (!s->cpu_dsp[i]) {
++            if (!object_property_set_bool(cpuobj, "dsp", false, errp)) {
++                return;
++            }
++        }
++
++        if (i > 0) {
++            memory_region_add_subregion_overlap(&s->cpu_container[i], 0,
++                                                &s->container_alias[i - 1], -1);
++        } else {
++            memory_region_add_subregion_overlap(&s->cpu_container[i], 0,
++                                                &s->container, -1);
++        }
++        object_property_set_link(cpuobj, "memory",
++                                 OBJECT(&s->cpu_container[i]), &error_abort);
++        if (!sysbus_realize(SYS_BUS_DEVICE(cpuobj), errp)) {
++            return;
++        }
++        /*
++         * The cluster must be realized after the armv7m container, as
++         * the container's CPU object is only created on realize, and the
++         * CPU must exist and have been parented into the cluster before
++         * the cluster is realized.
++         */
++        if (!qdev_realize(DEVICE(&s->cluster[i]), NULL, errp)) {
++            return;
++        }
++
++        /* Connect EXP_IRQ/EXP_CPUn_IRQ GPIOs to the NVIC's lines 32 and up */
++        s->exp_irqs[i] = g_new(qemu_irq, s->exp_numirq);
++        for (j = 0; j < s->exp_numirq; j++) {
++            s->exp_irqs[i][j] = qdev_get_gpio_in(cpudev, j);
++        }
++        if (i == 0) {
++            gpioname = g_strdup("EXP_IRQ");
++        } else {
++            gpioname = g_strdup_printf("EXP_CPU%d_IRQ", i);
++        }
++        qdev_init_gpio_in_named_with_opaque(dev, armsse_exp_irq,
++                                            s->exp_irqs[i],
++                                            gpioname, s->exp_numirq);
++        g_free(gpioname);
++    }
++
++    /* Wire up the splitters that connect common IRQs to all CPUs */
++    if (info->num_cpus > 1) {
++        for (i = 0; i < ARRAY_SIZE(s->cpu_irq_splitter); i++) {
++            if (irq_is_common[i]) {
++                Object *splitter = OBJECT(&s->cpu_irq_splitter[i]);
++                DeviceState *devs = DEVICE(splitter);
++                int cpunum;
++
++                if (!object_property_set_int(splitter, "num-lines",
++                                             info->num_cpus, errp)) {
++                    return;
++                }
++                if (!qdev_realize(DEVICE(splitter), NULL, errp)) {
++                    return;
++                }
++                for (cpunum = 0; cpunum < info->num_cpus; cpunum++) {
++                    DeviceState *cpudev = DEVICE(&s->armv7m[cpunum]);
++
++                    qdev_connect_gpio_out(devs, cpunum,
++                                          qdev_get_gpio_in(cpudev, i));
++                }
++            }
++        }
++    }
++
++    /* Set up the big aliases first */
++    make_alias(s, &s->alias1, &s->container, "alias 1",
++               0x10000000, 0x10000000, 0x00000000);
++    make_alias(s, &s->alias2, &s->container,
++               "alias 2", 0x30000000, 0x10000000, 0x20000000);
++    /* The 0x50000000..0x5fffffff region is not a pure alias: it has
++     * a few extra devices that only appear there (generally the
++     * control interfaces for the protection controllers).
++     * We implement this by mapping those devices over the top of this
++     * alias MR at a higher priority. Some of the devices in this range
++     * are per-CPU, so we must put this alias in the per-cpu containers.
++     */
++    for (i = 0; i < info->num_cpus; i++) {
++        make_alias(s, &s->alias3[i], &s->cpu_container[i],
++                   "alias 3", 0x50000000, 0x10000000, 0x40000000);
++    }
++
++    /* Security controller */
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->secctl), errp)) {
++        return;
++    }
++    sbd_secctl = SYS_BUS_DEVICE(&s->secctl);
++    dev_secctl = DEVICE(&s->secctl);
++    sysbus_mmio_map(sbd_secctl, 0, 0x50080000);
++    sysbus_mmio_map(sbd_secctl, 1, 0x40080000);
++
++    s->nsc_cfg_in = qemu_allocate_irq(nsccfg_handler, s, 1);
++    qdev_connect_gpio_out_named(dev_secctl, "nsc_cfg", 0, s->nsc_cfg_in);
++
++    /* The sec_resp_cfg output from the security controller must be split into
++     * multiple lines, one for each of the PPCs within the ARMSSE and one
++     * that will be an output from the ARMSSE to the system.
++     */
++    if (!object_property_set_int(OBJECT(&s->sec_resp_splitter),
++                                 "num-lines", 3, errp)) {
++        return;
++    }
++    if (!qdev_realize(DEVICE(&s->sec_resp_splitter), NULL, errp)) {
++        return;
++    }
++    dev_splitter = DEVICE(&s->sec_resp_splitter);
++    qdev_connect_gpio_out_named(dev_secctl, "sec_resp_cfg", 0,
++                                qdev_get_gpio_in(dev_splitter, 0));
++
++    /* Each SRAM bank lives behind its own Memory Protection Controller */
++    for (i = 0; i < info->sram_banks; i++) {
++        char *ramname = g_strdup_printf("armsse.sram%d", i);
++        SysBusDevice *sbd_mpc;
++        uint32_t sram_bank_size = 1 << s->sram_addr_width;
++
++        memory_region_init_ram(&s->sram[i], NULL, ramname,
++                               sram_bank_size, &err);
++        g_free(ramname);
++        if (err) {
++            error_propagate(errp, err);
++            return;
++        }
++        object_property_set_link(OBJECT(&s->mpc[i]), "downstream",
++                                 OBJECT(&s->sram[i]), &error_abort);
++        if (!sysbus_realize(SYS_BUS_DEVICE(&s->mpc[i]), errp)) {
++            return;
++        }
++        /* Map the upstream end of the MPC into the right place... */
++        sbd_mpc = SYS_BUS_DEVICE(&s->mpc[i]);
++        memory_region_add_subregion(&s->container,
++                                    0x20000000 + i * sram_bank_size,
++                                    sysbus_mmio_get_region(sbd_mpc, 1));
++        /* ...and its register interface */
++        memory_region_add_subregion(&s->container, 0x50083000 + i * 0x1000,
++                                    sysbus_mmio_get_region(sbd_mpc, 0));
++    }
++
++    /* We must OR together lines from the MPC splitters to go to the NVIC */
++    if (!object_property_set_int(OBJECT(&s->mpc_irq_orgate), "num-lines",
++                                 IOTS_NUM_EXP_MPC + info->sram_banks,
++                                 errp)) {
++        return;
++    }
++    if (!qdev_realize(DEVICE(&s->mpc_irq_orgate), NULL, errp)) {
++        return;
++    }
++    qdev_connect_gpio_out(DEVICE(&s->mpc_irq_orgate), 0,
++                          armsse_get_common_irq_in(s, 9));
++
++    /* Devices behind APB PPC0:
++     *   0x40000000: timer0
++     *   0x40001000: timer1
++     *   0x40002000: dual timer
++     *   0x40003000: MHU0 (SSE-200 only)
++     *   0x40004000: MHU1 (SSE-200 only)
++     * We must configure and realize each downstream device and connect
++     * it to the appropriate PPC port; then we can realize the PPC and
++     * map its upstream ends to the right place in the container.
++     */
++    qdev_prop_set_uint32(DEVICE(&s->timer0), "pclk-frq", s->mainclk_frq);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->timer0), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->timer0), 0,
++                       armsse_get_common_irq_in(s, 3));
++    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->timer0), 0);
++    object_property_set_link(OBJECT(&s->apb_ppc0), "port[0]", OBJECT(mr),
++                             &error_abort);
++
++    qdev_prop_set_uint32(DEVICE(&s->timer1), "pclk-frq", s->mainclk_frq);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->timer1), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->timer1), 0,
++                       armsse_get_common_irq_in(s, 4));
++    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->timer1), 0);
++    object_property_set_link(OBJECT(&s->apb_ppc0), "port[1]", OBJECT(mr),
++                             &error_abort);
++
++    qdev_prop_set_uint32(DEVICE(&s->dualtimer), "pclk-frq", s->mainclk_frq);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->dualtimer), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dualtimer), 0,
++                       armsse_get_common_irq_in(s, 5));
++    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dualtimer), 0);
++    object_property_set_link(OBJECT(&s->apb_ppc0), "port[2]", OBJECT(mr),
++                             &error_abort);
++
++    if (info->has_mhus) {
++        /*
++         * An SSE-200 with only one CPU should have only one MHU created,
++         * with the region where the second MHU usually is being RAZ/WI.
++         * We don't implement that SSE-200 config; if we want to support
++         * it then this code needs to be enhanced to handle creating the
++         * RAZ/WI region instead of the second MHU.
++         */
++        assert(info->num_cpus == ARRAY_SIZE(s->mhu));
++
++        for (i = 0; i < ARRAY_SIZE(s->mhu); i++) {
++            char *port;
++            int cpunum;
++            SysBusDevice *mhu_sbd = SYS_BUS_DEVICE(&s->mhu[i]);
++
++            if (!sysbus_realize(SYS_BUS_DEVICE(&s->mhu[i]), errp)) {
++                return;
++            }
++            port = g_strdup_printf("port[%d]", i + 3);
++            mr = sysbus_mmio_get_region(mhu_sbd, 0);
++            object_property_set_link(OBJECT(&s->apb_ppc0), port, OBJECT(mr),
++                                     &error_abort);
++            g_free(port);
++
++            /*
++             * Each MHU has an irq line for each CPU:
++             *  MHU 0 irq line 0 -> CPU 0 IRQ 6
++             *  MHU 0 irq line 1 -> CPU 1 IRQ 6
++             *  MHU 1 irq line 0 -> CPU 0 IRQ 7
++             *  MHU 1 irq line 1 -> CPU 1 IRQ 7
++             */
++            for (cpunum = 0; cpunum < info->num_cpus; cpunum++) {
++                DeviceState *cpudev = DEVICE(&s->armv7m[cpunum]);
++
++                sysbus_connect_irq(mhu_sbd, cpunum,
++                                   qdev_get_gpio_in(cpudev, 6 + i));
++            }
++        }
++    }
++
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->apb_ppc0), errp)) {
++        return;
++    }
++
++    sbd_apb_ppc0 = SYS_BUS_DEVICE(&s->apb_ppc0);
++    dev_apb_ppc0 = DEVICE(&s->apb_ppc0);
++
++    mr = sysbus_mmio_get_region(sbd_apb_ppc0, 0);
++    memory_region_add_subregion(&s->container, 0x40000000, mr);
++    mr = sysbus_mmio_get_region(sbd_apb_ppc0, 1);
++    memory_region_add_subregion(&s->container, 0x40001000, mr);
++    mr = sysbus_mmio_get_region(sbd_apb_ppc0, 2);
++    memory_region_add_subregion(&s->container, 0x40002000, mr);
++    if (info->has_mhus) {
++        mr = sysbus_mmio_get_region(sbd_apb_ppc0, 3);
++        memory_region_add_subregion(&s->container, 0x40003000, mr);
++        mr = sysbus_mmio_get_region(sbd_apb_ppc0, 4);
++        memory_region_add_subregion(&s->container, 0x40004000, mr);
++    }
++    for (i = 0; i < IOTS_APB_PPC0_NUM_PORTS; i++) {
++        qdev_connect_gpio_out_named(dev_secctl, "apb_ppc0_nonsec", i,
++                                    qdev_get_gpio_in_named(dev_apb_ppc0,
++                                                           "cfg_nonsec", i));
++        qdev_connect_gpio_out_named(dev_secctl, "apb_ppc0_ap", i,
++                                    qdev_get_gpio_in_named(dev_apb_ppc0,
++                                                           "cfg_ap", i));
++    }
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc0_irq_enable", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc0,
++                                                       "irq_enable", 0));
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc0_irq_clear", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc0,
++                                                       "irq_clear", 0));
++    qdev_connect_gpio_out(dev_splitter, 0,
++                          qdev_get_gpio_in_named(dev_apb_ppc0,
++                                                 "cfg_sec_resp", 0));
++
++    /* All the PPC irq lines (from the 2 internal PPCs and the 8 external
++     * ones) are sent individually to the security controller, and also
++     * ORed together to give a single combined PPC interrupt to the NVIC.
++     */
++    if (!object_property_set_int(OBJECT(&s->ppc_irq_orgate),
++                                 "num-lines", NUM_PPCS, errp)) {
++        return;
++    }
++    if (!qdev_realize(DEVICE(&s->ppc_irq_orgate), NULL, errp)) {
++        return;
++    }
++    qdev_connect_gpio_out(DEVICE(&s->ppc_irq_orgate), 0,
++                          armsse_get_common_irq_in(s, 10));
++
++    /*
++     * 0x40010000 .. 0x4001ffff (and the 0x5001000... secure-only alias):
++     * private per-CPU region (all these devices are SSE-200 only):
++     *  0x50010000: L1 icache control registers
++     *  0x50011000: CPUSECCTRL (CPU local security control registers)
++     *  0x4001f000 and 0x5001f000: CPU_IDENTITY register block
++     */
++    if (info->has_cachectrl) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("cachectrl%d", i);
++            MemoryRegion *mr;
++
++            qdev_prop_set_string(DEVICE(&s->cachectrl[i]), "name", name);
++            g_free(name);
++            qdev_prop_set_uint64(DEVICE(&s->cachectrl[i]), "size", 0x1000);
++            if (!sysbus_realize(SYS_BUS_DEVICE(&s->cachectrl[i]), errp)) {
++                return;
++            }
++
++            mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->cachectrl[i]), 0);
++            memory_region_add_subregion(&s->cpu_container[i], 0x50010000, mr);
++        }
++    }
++    if (info->has_cpusecctrl) {
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("CPUSECCTRL%d", i);
++            MemoryRegion *mr;
++
++            qdev_prop_set_string(DEVICE(&s->cpusecctrl[i]), "name", name);
++            g_free(name);
++            qdev_prop_set_uint64(DEVICE(&s->cpusecctrl[i]), "size", 0x1000);
++            if (!sysbus_realize(SYS_BUS_DEVICE(&s->cpusecctrl[i]), errp)) {
++                return;
++            }
++
++            mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->cpusecctrl[i]), 0);
++            memory_region_add_subregion(&s->cpu_container[i], 0x50011000, mr);
++        }
++    }
++    if (info->has_cpuid) {
++        for (i = 0; i < info->num_cpus; i++) {
++            MemoryRegion *mr;
++
++            qdev_prop_set_uint32(DEVICE(&s->cpuid[i]), "CPUID", i);
++            if (!sysbus_realize(SYS_BUS_DEVICE(&s->cpuid[i]), errp)) {
++                return;
++            }
++
++            mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->cpuid[i]), 0);
++            memory_region_add_subregion(&s->cpu_container[i], 0x4001F000, mr);
++        }
++    }
++
++    /* 0x40020000 .. 0x4002ffff : ARMSSE system control peripheral region */
++    /* Devices behind APB PPC1:
++     *   0x4002f000: S32K timer
++     */
++    qdev_prop_set_uint32(DEVICE(&s->s32ktimer), "pclk-frq", S32KCLK);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->s32ktimer), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->s32ktimer), 0,
++                       armsse_get_common_irq_in(s, 2));
++    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->s32ktimer), 0);
++    object_property_set_link(OBJECT(&s->apb_ppc1), "port[0]", OBJECT(mr),
++                             &error_abort);
++
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->apb_ppc1), errp)) {
++        return;
++    }
++    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->apb_ppc1), 0);
++    memory_region_add_subregion(&s->container, 0x4002f000, mr);
++
++    dev_apb_ppc1 = DEVICE(&s->apb_ppc1);
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc1_nonsec", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc1,
++                                                       "cfg_nonsec", 0));
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc1_ap", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc1,
++                                                       "cfg_ap", 0));
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc1_irq_enable", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc1,
++                                                       "irq_enable", 0));
++    qdev_connect_gpio_out_named(dev_secctl, "apb_ppc1_irq_clear", 0,
++                                qdev_get_gpio_in_named(dev_apb_ppc1,
++                                                       "irq_clear", 0));
++    qdev_connect_gpio_out(dev_splitter, 1,
++                          qdev_get_gpio_in_named(dev_apb_ppc1,
++                                                 "cfg_sec_resp", 0));
++
++    if (!object_property_set_int(OBJECT(&s->sysinfo), "SYS_VERSION",
++                                 info->sys_version, errp)) {
++        return;
++    }
++    if (!object_property_set_int(OBJECT(&s->sysinfo), "SYS_CONFIG",
++                                 armsse_sys_config_value(s, info), errp)) {
++        return;
++    }
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->sysinfo), errp)) {
++        return;
++    }
++    /* System information registers */
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->sysinfo), 0, 0x40020000);
++    /* System control registers */
++    object_property_set_int(OBJECT(&s->sysctl), "SYS_VERSION",
++                            info->sys_version, &error_abort);
++    object_property_set_int(OBJECT(&s->sysctl), "CPUWAIT_RST",
++                            info->cpuwait_rst, &error_abort);
++    object_property_set_int(OBJECT(&s->sysctl), "INITSVTOR0_RST",
++                            s->init_svtor, &error_abort);
++    object_property_set_int(OBJECT(&s->sysctl), "INITSVTOR1_RST",
++                            s->init_svtor, &error_abort);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->sysctl), errp)) {
++        return;
++    }
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->sysctl), 0, 0x50021000);
++
++    if (info->has_ppus) {
++        /* CPUnCORE_PPU for each CPU */
++        for (i = 0; i < info->num_cpus; i++) {
++            char *name = g_strdup_printf("CPU%dCORE_PPU", i);
++
++            map_ppu(s, CPU0CORE_PPU + i, name, 0x50023000 + i * 0x2000);
++            /*
++             * We don't support CPU debug so don't create the
++             * CPU0DEBUG_PPU at 0x50024000 and 0x50026000.
++             */
++            g_free(name);
++        }
++        map_ppu(s, DBG_PPU, "DBG_PPU", 0x50029000);
++
++        for (i = 0; i < info->sram_banks; i++) {
++            char *name = g_strdup_printf("RAM%d_PPU", i);
++
++            map_ppu(s, RAM0_PPU + i, name, 0x5002a000 + i * 0x1000);
++            g_free(name);
++        }
++    }
++
++    /* This OR gate wires together outputs from the secure watchdogs to NMI */
++    if (!object_property_set_int(OBJECT(&s->nmi_orgate), "num-lines", 2,
++                                 errp)) {
++        return;
++    }
++    if (!qdev_realize(DEVICE(&s->nmi_orgate), NULL, errp)) {
++        return;
++    }
++    qdev_connect_gpio_out(DEVICE(&s->nmi_orgate), 0,
++                          qdev_get_gpio_in_named(DEVICE(&s->armv7m), "NMI", 0));
++
++    qdev_prop_set_uint32(DEVICE(&s->s32kwatchdog), "wdogclk-frq", S32KCLK);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->s32kwatchdog), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->s32kwatchdog), 0,
++                       qdev_get_gpio_in(DEVICE(&s->nmi_orgate), 0));
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->s32kwatchdog), 0, 0x5002e000);
++
++    /* 0x40080000 .. 0x4008ffff : ARMSSE second Base peripheral region */
++
++    qdev_prop_set_uint32(DEVICE(&s->nswatchdog), "wdogclk-frq", s->mainclk_frq);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->nswatchdog), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->nswatchdog), 0,
++                       armsse_get_common_irq_in(s, 1));
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->nswatchdog), 0, 0x40081000);
++
++    qdev_prop_set_uint32(DEVICE(&s->swatchdog), "wdogclk-frq", s->mainclk_frq);
++    if (!sysbus_realize(SYS_BUS_DEVICE(&s->swatchdog), errp)) {
++        return;
++    }
++    sysbus_connect_irq(SYS_BUS_DEVICE(&s->swatchdog), 0,
++                       qdev_get_gpio_in(DEVICE(&s->nmi_orgate), 1));
++    sysbus_mmio_map(SYS_BUS_DEVICE(&s->swatchdog), 0, 0x50081000);
++
++    for (i = 0; i < ARRAY_SIZE(s->ppc_irq_splitter); i++) {
++        Object *splitter = OBJECT(&s->ppc_irq_splitter[i]);
++
++        if (!object_property_set_int(splitter, "num-lines", 2, errp)) {
++            return;
++        }
++        if (!qdev_realize(DEVICE(splitter), NULL, errp)) {
++            return;
++        }
++    }
++
++    for (i = 0; i < IOTS_NUM_AHB_EXP_PPC; i++) {
++        char *ppcname = g_strdup_printf("ahb_ppcexp%d", i);
++
++        armsse_forward_ppc(s, ppcname, i);
++        g_free(ppcname);
++    }
++
++    for (i = 0; i < IOTS_NUM_APB_EXP_PPC; i++) {
++        char *ppcname = g_strdup_printf("apb_ppcexp%d", i);
++
++        armsse_forward_ppc(s, ppcname, i + IOTS_NUM_AHB_EXP_PPC);
++        g_free(ppcname);
++    }
++
++    for (i = NUM_EXTERNAL_PPCS; i < NUM_PPCS; i++) {
++        /* Wire up IRQ splitter for internal PPCs */
++        DeviceState *devs = DEVICE(&s->ppc_irq_splitter[i]);
++        char *gpioname = g_strdup_printf("apb_ppc%d_irq_status",
++                                         i - NUM_EXTERNAL_PPCS);
++        TZPPC *ppc = (i == NUM_EXTERNAL_PPCS) ? &s->apb_ppc0 : &s->apb_ppc1;
++
++        qdev_connect_gpio_out(devs, 0,
++                              qdev_get_gpio_in_named(dev_secctl, gpioname, 0));
++        qdev_connect_gpio_out(devs, 1,
++                              qdev_get_gpio_in(DEVICE(&s->ppc_irq_orgate), i));
++        qdev_connect_gpio_out_named(DEVICE(ppc), "irq", 0,
++                                    qdev_get_gpio_in(devs, 0));
++        g_free(gpioname);
++    }
++
++    /* Wire up the splitters for the MPC IRQs */
++    for (i = 0; i < IOTS_NUM_EXP_MPC + info->sram_banks; i++) {
++        SplitIRQ *splitter = &s->mpc_irq_splitter[i];
++        DeviceState *dev_splitter = DEVICE(splitter);
++
++        if (!object_property_set_int(OBJECT(splitter), "num-lines", 2,
++                                     errp)) {
++            return;
++        }
++        if (!qdev_realize(DEVICE(splitter), NULL, errp)) {
++            return;
++        }
++
++        if (i < IOTS_NUM_EXP_MPC) {
++            /* Splitter input is from GPIO input line */
++            s->mpcexp_status_in[i] = qdev_get_gpio_in(dev_splitter, 0);
++            qdev_connect_gpio_out(dev_splitter, 0,
++                                  qdev_get_gpio_in_named(dev_secctl,
++                                                         "mpcexp_status", i));
++        } else {
++            /* Splitter input is from our own MPC */
++            qdev_connect_gpio_out_named(DEVICE(&s->mpc[i - IOTS_NUM_EXP_MPC]),
++                                        "irq", 0,
++                                        qdev_get_gpio_in(dev_splitter, 0));
++            qdev_connect_gpio_out(dev_splitter, 0,
++                                  qdev_get_gpio_in_named(dev_secctl,
++                                                         "mpc_status",
++                                                         i - IOTS_NUM_EXP_MPC));
++        }
++
++        qdev_connect_gpio_out(dev_splitter, 1,
++                              qdev_get_gpio_in(DEVICE(&s->mpc_irq_orgate), i));
++    }
++    /* Create GPIO inputs which will pass the line state for our
++     * mpcexp_irq inputs to the correct splitter devices.
++     */
++    qdev_init_gpio_in_named(dev, armsse_mpcexp_status, "mpcexp_status",
++                            IOTS_NUM_EXP_MPC);
++
++    armsse_forward_sec_resp_cfg(s);
++
++    /* Forward the MSC related signals */
++    qdev_pass_gpios(dev_secctl, dev, "mscexp_status");
++    qdev_pass_gpios(dev_secctl, dev, "mscexp_clear");
++    qdev_pass_gpios(dev_secctl, dev, "mscexp_ns");
++    qdev_connect_gpio_out_named(dev_secctl, "msc_irq", 0,
++                                armsse_get_common_irq_in(s, 11));
++
++    /*
++     * Expose our container region to the board model; this corresponds
++     * to the AHB Slave Expansion ports which allow bus master devices
++     * (eg DMA controllers) in the board model to make transactions into
++     * devices in the ARMSSE.
++     */
++    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->container);
++
++    system_clock_scale = NANOSECONDS_PER_SECOND / s->mainclk_frq;
++}
++
++static const VMStateDescription armsse_vmstate = {
++    .name = "iotkit",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (VMStateField[]) {
++        VMSTATE_UINT32(nsccfg, ARMSSE),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
++static void armsse_reset(DeviceState *dev)
++{
++    ARMSSE *s = ARM_SSE(dev);
++
++    s->nsccfg = 0;
++}
++
++static void armsse_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    ARMSSEClass *asc = ARM_SSE_CLASS(klass);
++    const ARMSSEInfo *info = data;
++
++    dc->realize = armsse_realize;
++    dc->vmsd = &armsse_vmstate;
++    device_class_set_props(dc, info->props);
++    dc->reset = armsse_reset;
++    asc->info = info;
++}
++
++static const TypeInfo armsse_info = {
++    .name = TYPE_ARM_SSE,
++    .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(ARMSSE),
++    .class_size = sizeof(ARMSSEClass),
++    .instance_init = armsse_init,
++    .abstract = true,
++    .interfaces = (InterfaceInfo[]) {
++        { TYPE_IDAU_INTERFACE },
++        { }
++    }
++};
++
++static void alius_sse_register_types(void)
++{
++    int i;
++
++    type_register_static(&armsse_info);
++
++    for (i = 0; i < ARRAY_SIZE(armsse_variants); i++) {
++        TypeInfo ti = {
++            .name = armsse_variants[i].name,
++            .parent = TYPE_ARM_SSE,
++            .class_init = armsse_class_init,
++            .class_data = (void *)&armsse_variants[i],
++        };
++        type_register(&ti);
++    }
++}
++
++type_init(alius_sse_register_types);
+diff --git a/hw/arm/alius-fake-pmc.c b/hw/arm/alius-fake-pmc.c
+new file mode 100644
+index 0000000..e136464
+--- /dev/null
++++ b/hw/arm/alius-fake-pmc.c
+@@ -0,0 +1,120 @@
++/*
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/arm/alius-pmc.h"
++#include "sysemu/sysemu.h"
++#include "qemu/bitops.h"
++#include "qemu/log.h"
++#include "qemu/module.h"
++#include "arm-powerctl.h"
++//#include "qom/cpu.h"
++#include "qemu/typedefs.h"
++#include "migration/vmstate.h"
++
++static const VMStateDescription vmstate_alius_pmc = {
++    .name = TYPE_ALIUS_PMC,
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (VMStateField[]) {
++        VMSTATE_UINT32_ARRAY(regs, ALIUSPMCState, 2),
++        VMSTATE_END_OF_LIST()
++    },
++};
++
++static void alius_pmc_reset(DeviceState *dev)
++{
++    ALIUSPMCState *s = ALIUS_PMC(dev);
++
++    memset(s->regs, 0, sizeof(s->regs));
++}
++
++static uint64_t alius_pmc_read(void *opaque, hwaddr offset, unsigned size)
++{
++    uint32_t value = 0;
++    ALIUSPMCState *s = (ALIUSPMCState *)opaque;
++    uint32_t index = offset >> 2;
++
++    if (index < 2) {
++        value = s->regs[index];
++    } else {
++        qemu_log_mask(LOG_GUEST_ERROR, "[%s]%s: Bad register at offset 0x%"
++                      HWADDR_PRIx "\n", TYPE_ALIUS_PMC, __func__, offset);
++
++    }
++
++    return value;
++}
++
++static void alius_pmc_write(void *opaque, hwaddr offset, uint64_t value,
++                           unsigned size)
++{
++    ALIUSPMCState *s = (ALIUSPMCState *)opaque;
++    uint32_t index = offset >> 2;
++    unsigned long current_value = value;
++
++    switch (index) {
++    case RESET_VECTOR:
++        s->regs[index] = current_value;
++        break;
++    case POWER_ON:
++        arm_set_cpu_on(current_value, s->regs[RESET_VECTOR], 0, 3, true);
++        s->regs[index] = current_value;
++        break;
++    default:
++        s->regs[index] = current_value;
++        break;
++    }
++}
++
++static const struct MemoryRegionOps alius_pmc_ops = {
++    .read = alius_pmc_read,
++    .write = alius_pmc_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid = {
++        /*
++         * Our device would not work correctly if the guest was doing
++         * unaligned access. This might not be a limitation on the real
++         * device but in practice there is no reason for a guest to access
++         * this device unaligned.
++         */
++        .min_access_size = 4,
++        .max_access_size = 4,
++        .unaligned = false,
++    },
++};
++
++static void alius_pmc_realize(DeviceState *dev, Error **errp)
++{
++    ALIUSPMCState *s = ALIUS_PMC(dev);
++
++    memory_region_init_io(&s->iomem, OBJECT(dev), &alius_pmc_ops, s,
++                          TYPE_ALIUS_PMC, 0x1000);
++    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
++}
++
++static void alius_pmc_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++
++    dc->realize = alius_pmc_realize;
++    dc->reset = alius_pmc_reset;
++    dc->vmsd = &vmstate_alius_pmc;
++    dc->desc = "Fake Alius PMC";
++}
++
++static const TypeInfo alius_pmc_info = {
++    .name          = TYPE_ALIUS_PMC,
++    .parent        = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(ALIUSPMCState),
++    .class_init    = alius_pmc_class_init,
++};
++
++static void alius_pmc_register_types(void)
++{
++    type_register_static(&alius_pmc_info);
++}
++
++type_init(alius_pmc_register_types)
+diff --git a/hw/arm/alius-las.c b/hw/arm/alius-las.c
+new file mode 100755
+index 0000000..bfa9dc7
+--- /dev/null
++++ b/hw/arm/alius-las.c
+@@ -0,0 +1,218 @@
++/*
++ * Alius derived from ARM V2M MPS2 board emulation, trustzone aware FPGA images
++ *
++ * Copyright (c) 2017 Linaro Limited
++ * Written by Peter Maydell
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 or
++ *  (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "qemu/units.h"
++#include "qemu/cutils.h"
++#include "qapi/error.h"
++#include "qemu/error-report.h"
++#include "hw/arm/boot.h"
++#include "hw/arm/armv7m.h"
++#include "hw/or-irq.h"
++#include "hw/boards.h"
++#include "exec/address-spaces.h"
++#include "sysemu/sysemu.h"
++#include "hw/misc/unimp.h"
++#include "hw/char/serial.h"
++#include "hw/misc/tz-mpc.h"
++#include "hw/misc/tz-msc.h"
++#include "hw/arm/alius-armsse.h"
++#include "hw/core/split-irq.h"
++#include "qom/object.h"
++
++#define ALIUS_NUMIRQ 92
++
++typedef enum ALIUSFPGAType {
++    FPGA_ALIUS,
++} ALIUSFPGAType;
++
++struct ALIUSMachineClass {
++    MachineClass parent;
++    ALIUSFPGAType fpga_type;
++    uint32_t scc_id;
++    const char *armsse_type;
++};
++
++struct ALIUSMachineState {
++    MachineState parent;
++
++    ARMSSE iotkit;
++    MemoryRegion ssram;
++    MemoryRegion ssddr;
++    MemoryRegion ssram_m;
++    TZPPC ppc[5];
++    TZMPC ssram_mpc[3];
++    TZMSC msc[4];
++    SplitIRQ sec_resp_splitter;
++    SplitIRQ cpu_irq_splitter[ALIUS_NUMIRQ];
++};
++
++#define TYPE_ALIUS_MACHINE "alius"
++#define TYPE_ALIUS_VSI_MACHINE MACHINE_TYPE_NAME("alius-las")
++
++OBJECT_DECLARE_TYPE(ALIUSMachineState, ALIUSMachineClass, ALIUS_MACHINE)
++
++/* Main SYSCLK frequency in Hz */
++#define SYSCLK_FRQ 20000000
++
++/* SSRAM base addr */
++#define LAS_DDR_BASE 0x40000000
++/* SSRAM size */
++#define LAS_DDR_SIZE 0x60000000
++
++/* SSRAM base addr */
++#define LAS_SSRAM_BASE 0x20400000
++/* SSRAM size */
++#define LAS_SSRAM_SIZE 0x00200000
++
++/* UART registers base addr */
++#define LAS_UART_REG_BASE 0xb0150000
++/* UART interrupt number */
++#define LAS_UART_IRQ_NO 0
++
++static qemu_irq get_sse_irq_in(ALIUSMachineState *mms, int irqno)
++{
++    assert(irqno < ALIUS_NUMIRQ);
++
++    return qdev_get_gpio_in_named(DEVICE(&mms->iotkit), "EXP_IRQ", irqno);
++}
++
++static void alius_common_init(MachineState *machine)
++{
++    ALIUSMachineState *mms = ALIUS_MACHINE(machine);
++    ALIUSMachineClass *mmc = ALIUS_MACHINE_GET_CLASS(mms);
++    MachineClass *mc = MACHINE_GET_CLASS(machine);
++    MemoryRegion *system_memory = get_system_memory();
++    DeviceState *iotkitdev;
++    DeviceState *dev_splitter;
++
++    if (strcmp(machine->cpu_type, mc->default_cpu_type) != 0) {
++        error_report("This board can only be used with CPU %s",
++                     mc->default_cpu_type);
++        exit(1);
++    }
++
++    if (machine->ram_size != mc->default_ram_size) {
++        char *sz = size_to_str(mc->default_ram_size);
++        error_report("Invalid RAM size, should be %s", sz);
++        g_free(sz);
++        exit(EXIT_FAILURE);
++    }
++
++    object_initialize_child(OBJECT(machine), TYPE_IOTKIT, &mms->iotkit,
++                            mmc->armsse_type);
++    iotkitdev = DEVICE(&mms->iotkit);
++    object_property_set_link(OBJECT(&mms->iotkit), "memory",
++                             OBJECT(system_memory), &error_abort);
++    qdev_prop_set_uint32(iotkitdev, "EXP_NUMIRQ", ALIUS_NUMIRQ);
++    qdev_prop_set_uint32(iotkitdev, "MAINCLK", SYSCLK_FRQ);
++    sysbus_realize(SYS_BUS_DEVICE(&mms->iotkit), &error_fatal);
++
++    /* The sec_resp_cfg output from the IoTKit must be split into multiple
++     * lines, one for each of the PPCs we create here, plus one per MSC.
++     */
++    object_initialize_child(OBJECT(machine), "sec-resp-splitter",
++                            &mms->sec_resp_splitter, TYPE_SPLIT_IRQ);
++    object_property_set_int(OBJECT(&mms->sec_resp_splitter), "num-lines",
++                            ARRAY_SIZE(mms->ppc) + ARRAY_SIZE(mms->msc),
++                            &error_fatal);
++    qdev_realize(DEVICE(&mms->sec_resp_splitter), NULL, &error_fatal);
++    dev_splitter = DEVICE(&mms->sec_resp_splitter);
++    qdev_connect_gpio_out_named(iotkitdev, "sec_resp_cfg", 0,
++                                qdev_get_gpio_in(dev_splitter, 0));
++
++    /* The IoTKit sets up much of the memory layout, including
++     * the aliases between secure and non-secure regions in the
++     * address space. The FPGA itself contains:
++     *
++     * 0x00000000..0x001fffff  SSRAM
++     * 0x00200000..0x003fffff  alias of SSRAM
++     * 0x40100000..0x4fffffff  AHB Master Expansion 1 interface devices
++     * 0x80000000..0x80ffffff  16MB PSRAM
++     */
++
++    /* The FPGA images have an odd combination of different RAMs,
++     * because in hardware they are different implementations and
++     * connected to different buses, giving varying performance/size
++     * tradeoffs. For QEMU they're all just RAM, though. We arbitrarily
++     * call the 16MB our "system memory", as it's the largest lump.
++     */
++    memory_region_add_subregion(system_memory, 0x80000000, machine->ram);
++
++    memory_region_init_ram(&mms->ssddr, NULL, "ssddr-las",
++                       LAS_DDR_SIZE, &error_fatal);
++    memory_region_add_subregion(get_system_memory(),
++                       LAS_DDR_BASE, &mms->ssddr);
++
++    memory_region_init_ram(&mms->ssram, NULL, "ssram-las",
++                       LAS_SSRAM_SIZE, &error_fatal);
++    memory_region_add_subregion(get_system_memory(),
++                       LAS_SSRAM_BASE, &mms->ssram);
++
++    serial_mm_init(get_system_memory(), LAS_UART_REG_BASE, 2,
++                       get_sse_irq_in(mms, LAS_UART_IRQ_NO), 115200,
++                       serial_hd(0), DEVICE_LITTLE_ENDIAN);
++
++    create_unimplemented_device("FPGA NS PC", 0x48007000, 0x1000);
++
++    armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename, 0x400000);
++}
++
++static void alius_class_init(ObjectClass *oc, void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(oc);
++
++    mc->init = alius_common_init;
++    mc->default_ram_size = 16 * MiB;
++    mc->default_ram_id = "mps.ram";
++}
++
++static void alius_vsi_class_init(ObjectClass *oc, void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(oc);
++    ALIUSMachineClass *mmc = ALIUS_MACHINE_CLASS(oc);
++
++    mc->desc = "ALIUS FPGA image for Cortex-M33";
++    mc->default_cpus = 1;
++    mc->min_cpus = mc->default_cpus;
++    mc->max_cpus = mc->default_cpus;
++    mmc->fpga_type = FPGA_ALIUS;
++    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
++    mmc->scc_id = 0x41045666;
++    mmc->armsse_type = TYPE_IOTKIT;
++}
++
++static const TypeInfo alius_info = {
++    .name = TYPE_ALIUS_MACHINE,
++    .parent = TYPE_MACHINE,
++    .abstract = true,
++    .instance_size = sizeof(ALIUSMachineState),
++    .class_size = sizeof(ALIUSMachineClass),
++    .class_init = alius_class_init,
++    .interfaces = (InterfaceInfo[]) {
++        { TYPE_IDAU_INTERFACE },
++        { }
++    },
++};
++
++static const TypeInfo alius_vsi_info = {
++    .name = TYPE_ALIUS_VSI_MACHINE,
++    .parent = TYPE_ALIUS_MACHINE,
++    .class_init = alius_vsi_class_init,
++};
++
++static void alius_machine_init(void)
++{
++    type_register_static(&alius_info);
++    type_register_static(&alius_vsi_info);
++}
++
++type_init(alius_machine_init);
+diff --git a/hw/arm/alius.c b/hw/arm/alius.c
+new file mode 100644
+index 0000000..9149d5a
+--- /dev/null
++++ b/hw/arm/alius.c
+@@ -0,0 +1,1679 @@
++/*
++ * Alius derived from ARM mach-virt emulation
++ *
++ * Copyright (c) 2013 Linaro Limited
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "qemu/osdep.h"
++#include "qemu-common.h"
++#include "qemu/units.h"
++#include "qemu/option.h"
++#include "qapi/error.h"
++#include "hw/sysbus.h"
++#include "hw/arm/boot.h"
++#include "hw/arm/primecell.h"
++#include "hw/arm/alius.h"
++#include "hw/arm/alius-pmc.h"
++#include "hw/block/flash.h"
++#include "hw/vfio/vfio-calxeda-xgmac.h"
++#include "hw/vfio/vfio-amd-xgbe.h"
++#include "hw/display/ramfb.h"
++#include "net/net.h"
++#include "sysemu/device_tree.h"
++#include "sysemu/numa.h"
++#include "sysemu/sysemu.h"
++#include "sysemu/kvm.h"
++#include "hw/loader.h"
++#include "exec/address-spaces.h"
++#include "qemu/bitops.h"
++#include "qemu/error-report.h"
++#include "qemu/module.h"
++#include "hw/pci-host/gpex.h"
++#include "hw/arm/sysbus-fdt.h"
++#include "hw/platform-bus.h"
++#include "hw/arm/fdt.h"
++#include "hw/intc/arm_gic.h"
++#include "hw/intc/arm_gicv3_common.h"
++#include "kvm_arm.h"
++#include "hw/firmware/smbios.h"
++#include "qapi/visitor.h"
++#include "standard-headers/linux/input.h"
++#include "hw/arm/smmuv3.h"
++#include "hw/acpi/acpi.h"
++#include "target/arm/internals.h"
++#include "hw/char/serial.h"
++#include "hw/sd/sdhci.h"
++#include "hw/net/lan9118.h"
++#include "hw/intc/arm_gicv3_its_common.h"
++#include "hw/qdev-properties.h"
++#include "hw/irq.h"
++#include "sysemu/runstate.h"
++
++#define DEFINE_ALIUS_MACHINE_LATEST(major, minor, latest) \
++    static void alius_##major##_##minor##_class_init(ObjectClass *oc, \
++                                                    void *data) \
++    { \
++        MachineClass *mc = MACHINE_CLASS(oc); \
++        alius_machine_##major##_##minor##_options(mc); \
++        mc->desc = "QEMU " # major "." # minor " Alius Aliusual Machine"; \
++        if (latest) { \
++            mc->alias = "alius"; \
++        } \
++    } \
++    static const TypeInfo machalius_##major##_##minor##_info = { \
++        .name = MACHINE_TYPE_NAME("alius-" # major "." # minor), \
++        .parent = TYPE_ALIUS_MACHINE, \
++        .class_init = alius_##major##_##minor##_class_init, \
++    }; \
++    static void machalius_machine_##major##_##minor##_init(void) \
++    { \
++        type_register_static(&machalius_##major##_##minor##_info); \
++    } \
++    type_init(machalius_machine_##major##_##minor##_init);
++
++#define DEFINE_ALIUS_MACHINE_AS_LATEST(major, minor) \
++    DEFINE_ALIUS_MACHINE_LATEST(major, minor, true)
++#define DEFINE_ALIUS_MACHINE(major, minor) \
++    DEFINE_ALIUS_MACHINE_LATEST(major, minor, false)
++
++
++/* Number of external interrupt lines to configure the GIC with */
++#define NUM_IRQS 256
++
++#define PLATFORM_BUS_NUM_IRQS 64
++
++/* Legacy RAM limit in GB (< version 4.0) */
++/* #define LEGACY_RAMLIMIT_GB 255 luke */
++#define LEGACY_RAMLIMIT_GB 16
++#define LEGACY_RAMLIMIT_BYTES (LEGACY_RAMLIMIT_GB * GiB)
++
++
++#define SDHCI_CAPABILITIES  0x28073ffc1898
++
++/* Addresses and sizes of our components.
++ * 0..128MB is space for a flash device so we can run bootrom code such as UEFI.
++ * 128MB..256MB is used for miscellaneous device I/O.
++ * 256MB..1GB is reserved for possible future PCI support (ie where the
++ * PCI memory window will go if we add a PCI host controller).
++ * 1GB and up is RAM (which may happily spill over into the
++ * high memory region beyond 4GB).
++ * This represents a compromise between how much RAM can be given to
++ * a 32 bit VM and leaving space for expansion and in particular for PCI.
++ * Note that devices should generally be placed at multiples of 0x10000,
++ * to accommodate guests using 64K pages.
++ */
++static const MemMapEntry base_memmap[] = {
++    /* Space up to 0x8000000 is reserved for a boot ROM */
++    [ALIUS_FLASH] =              { 0x00000000, 0x20000 },
++    [ALIUS_SRAM0] =              { 0x90000000, 0x400000},
++    [ALIUS_SRAM1] =              { 0x90400000, 0x400000},
++    [ALIUS_PMC]   =              { 0x02000000, 0x1000 },
++    [ALIUS_FAKE_FLASH] =         { 0x00800000, 0x200000 },
++    [ALIUS_DDR0] =               { 0x40000000, 0x40000000 },
++    [ALIUS_CPUPERIPHS] =         { 0x10000000, 0x00020000 },
++    [ALIUS_GIC_DIST] =           { 0xa1300000, 0x00001000 },
++    [ALIUS_GIC_CPU] =            { 0xa1301000, 0x00002000 },
++    [ALIUS_GIC_V2M] =            { 0x10020000, 0x00001000 },
++    [ALIUS_GIC_HYP] =            { 0x10030000, 0x00010000 },
++    [ALIUS_GIC_VCPU] =           { 0x10040000, 0x00010000 },
++    /* The space in between here is reserved for GICv3 CPU/vCPU/HYP */
++    [ALIUS_GIC_ITS] =            { 0x0c040000, 0x00020000 },
++    /* This redistributor space allows up to 2*64kB*123 CPUs */
++    [ALIUS_GIC_REDIST] =         { 0xa1340000, 0x00f60000 },
++
++    [ALIUS_UART] =               { 0xa1510000, 0x00010000 },
++    [ALIUS_SDHCI] =              { 0xa1420000, 0x00010000 },
++    [ALIUS_RTC] =                { 0x09010000, 0x00001000 },
++    [ALIUS_FW_CFG] =             { 0x09020000, 0x00000018 },
++    [ALIUS_GPIO] =               { 0x09030000, 0x00001000 },
++    [ALIUS_SECURE_UART] =        { 0x0a140000, 0x00001000 },
++    [ALIUS_SMMU] =               { 0x09050000, 0x00020000 },
++    [ALIUS_NIC] =                { 0x09070000, 0x00010000 },
++    [ALIUS_MMIO] =               { 0x0b000000, 0x00000200 },
++    /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
++    [ALIUS_PLATFORM_BUS] =       { 0x0c000000, 0x01000000 },
++    [ALIUS_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
++    [ALIUS_BOOT_CFG] =           { 0xbffffff0, 0x00000010 },
++    [ALIUS_PCIE_MMIO] =          { 0x120000000, 0x2eff0000 },
++    [ALIUS_PCIE_PIO] =           { 0x14eff0000, 0x00010000 },
++    [ALIUS_PCIE_ECAM] =          { 0x14f000000, 0x01000000 },
++    /* Actual RAM size depends on initial RAM and device memory settings */
++    [ALIUS_DDR1] =               { 0x880000000, LEGACY_RAMLIMIT_BYTES },
++};
++
++/*
++ * Highmem IO Regions: This memory map is floating, located after the RAM.
++ * Each MemMapEntry base (GPA) will be dynamically computed, depending on the
++ * top of the RAM, so that its base get the same alignment as the size,
++ * ie. a 512GiB entry will be aligned on a 512GiB boundary. If there is
++ * less than 256GiB of RAM, the floating area starts at the 256GiB mark.
++ * Note the extended_memmap is sized so that it eventually also includes the
++ * base_memmap entries (ALIUS_HIGH_GIC_REDIST2 index is greater than the last
++ * index of base_memmap).
++ */
++static MemMapEntry extended_memmap[] = {
++    /* Additional 64 MB redist region (can contain up to 512 redistributors) */
++    [ALIUS_HIGH_GIC_REDIST2] =   { 0x0, 64 * MiB },
++    [ALIUS_HIGH_PCIE_ECAM] =     { 0x0, 256 * MiB },
++    /* Second PCIe window */
++    [ALIUS_HIGH_PCIE_MMIO] =     { 0x0, 512 * GiB },
++};
++
++static const int a15irqmap[] = {
++    [ALIUS_UART] = 5,
++    [ALIUS_RTC] = 2,
++    [ALIUS_PCIE] = 3, /* ... to 6 */
++    [ALIUS_SDHCI] = 125,
++    [ALIUS_GPIO] = 7,
++    [ALIUS_SECURE_UART] = 8,
++    [ALIUS_NIC] = 136,
++    [ALIUS_MMIO] = 16, /* ...to 16 + NUM_VIRTIO_TRANSPORTS - 1 */
++    [ALIUS_GIC_V2M] = 48, /* ...to 48 + NUM_GICV2M_SPIS - 1 */
++    [ALIUS_SMMU] = 74,    /* ...to 74 + NUM_SMMU_IRQS - 1 */
++    [ALIUS_PLATFORM_BUS] = 112, /* ...to 112 + PLATFORM_BUS_NUM_IRQS -1 */
++};
++
++static const char *valid_cpus[] = {
++    ARM_CPU_TYPE_NAME("cortex-a7"),
++    ARM_CPU_TYPE_NAME("cortex-a15"),
++    ARM_CPU_TYPE_NAME("cortex-a32"),
++    ARM_CPU_TYPE_NAME("cortex-a53"),
++    ARM_CPU_TYPE_NAME("cortex-a57"),
++    ARM_CPU_TYPE_NAME("cortex-a72"),
++    ARM_CPU_TYPE_NAME("cortex-a77"),
++    ARM_CPU_TYPE_NAME("cortex-a55"),
++    ARM_CPU_TYPE_NAME("host"),
++    ARM_CPU_TYPE_NAME("max"),
++};
++
++static bool cpu_type_valid(const char *cpu)
++{
++    int i;
++
++    for (i = 0; i < ARRAY_SIZE(valid_cpus); i++) {
++        if (strcmp(cpu, valid_cpus[i]) == 0) {
++            return true;
++        }
++    }
++    return false;
++}
++
++static void create_its(AliusMachineState *fms, DeviceState *gicdev)
++{
++    const char *itsclass = its_class_name();
++    DeviceState *dev;
++
++    if (!itsclass) {
++        /* Do nothing if not supported */
++        return;
++    }
++    
++    dev = qdev_new(itsclass);
++
++    object_property_set_link(OBJECT(dev), "parent-gicv3", OBJECT(gicdev),
++                             &error_abort);
++ 
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, fms->memmap[ALIUS_GIC_ITS].base);
++}
++
++static void create_v2m(AliusMachineState *fms, qemu_irq *pic)
++{
++    int i;
++    int irq = fms->irqmap[ALIUS_GIC_V2M];
++    DeviceState *dev;
++
++    dev = qdev_new("arm-gicv2m");
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, fms->memmap[ALIUS_GIC_V2M].base);
++    qdev_prop_set_uint32(dev, "base-spi", irq);
++    qdev_prop_set_uint32(dev, "num-spi", NUM_GICV2M_SPIS);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++
++    for (i = 0; i < NUM_GICV2M_SPIS; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, pic[irq + i]);
++    }
++}
++
++static void create_gic(AliusMachineState *fms, qemu_irq *pic)
++{
++    MachineState *ms = MACHINE(fms);
++    /* We create a standalone GIC */
++    DeviceState *gicdev;
++    SysBusDevice *gicbusdev;
++    const char *gictype;
++    int type = fms->gic_version, i;
++    unsigned int smp_cpus = ms->smp.cpus;
++    uint32_t nb_redist_regions = 0;
++
++    gictype = (type == 3) ? gicv3_class_name() : gic_class_name();
++
++    gicdev = qdev_new(gictype);
++    qdev_prop_set_uint32(gicdev, "revision", type);
++    qdev_prop_set_uint32(gicdev, "num-cpu", smp_cpus);
++    /* Note that the num-irq property counts both internal and external
++     * interrupts; there are always 32 of the former (mandated by GIC spec).
++     */
++    qdev_prop_set_uint32(gicdev, "num-irq", NUM_IRQS + 32);
++    if (!kvm_irqchip_in_kernel()) {
++        qdev_prop_set_bit(gicdev, "has-security-extensions", fms->secure);
++    }
++
++    if (type == 3) {
++        uint32_t redist0_capacity =
++                    fms->memmap[ALIUS_GIC_REDIST].size / GICV3_REDIST_SIZE;
++        uint32_t redist0_count = MIN(smp_cpus, redist0_capacity);
++
++        nb_redist_regions = alius_gicv3_redist_region_count(fms);
++
++        qdev_prop_set_uint32(gicdev, "len-redist-region-count",
++                             nb_redist_regions);
++        qdev_prop_set_uint32(gicdev, "redist-region-count[0]", redist0_count);
++
++        if (nb_redist_regions == 2) {
++            uint32_t redist1_capacity =
++                    fms->memmap[ALIUS_HIGH_GIC_REDIST2].size / GICV3_REDIST_SIZE;
++
++            qdev_prop_set_uint32(gicdev, "redist-region-count[1]",
++                MIN(smp_cpus - redist0_count, redist1_capacity));
++        }
++    } else {
++        if (!kvm_irqchip_in_kernel()) {
++            qdev_prop_set_bit(gicdev, "has-virtualization-extensions",
++                              fms->virt);
++        }
++    }
++
++    gicbusdev = SYS_BUS_DEVICE(gicdev);
++    sysbus_realize_and_unref(gicbusdev, &error_fatal);
++    sysbus_mmio_map(gicbusdev, 0, fms->memmap[ALIUS_GIC_DIST].base);
++    if (type == 3) {
++        sysbus_mmio_map(gicbusdev, 1, fms->memmap[ALIUS_GIC_REDIST].base);
++        if (nb_redist_regions == 2) {
++            sysbus_mmio_map(gicbusdev, 2,
++                            fms->memmap[ALIUS_HIGH_GIC_REDIST2].base);
++        }
++    } else {
++        sysbus_mmio_map(gicbusdev, 1, fms->memmap[ALIUS_GIC_CPU].base);
++        if (fms->virt) {
++            sysbus_mmio_map(gicbusdev, 2, fms->memmap[ALIUS_GIC_HYP].base);
++            sysbus_mmio_map(gicbusdev, 3, fms->memmap[ALIUS_GIC_VCPU].base);
++        }
++    }
++
++    /* Wire the outputs from each CPU's generic timer and the GICv3
++     * maintenance interrupt signal to the appropriate GIC PPI inputs,
++     * and the GIC's IRQ/FIQ/VIRQ/VFIQ interrupt outputs to the CPU's inputs.
++     */
++    for (i = 0; i < smp_cpus; i++) {
++        DeviceState *cpudev = DEVICE(qemu_get_cpu(i));
++        int ppibase = NUM_IRQS + i * GIC_INTERNAL + GIC_NR_SGIS;
++        int irq;
++        /* Mapping from the output timer irq lines from the CPU to the
++         * GIC PPI inputs we use for the virt board.
++         */
++        const int timer_irq[] = {
++            [GTIMER_PHYS] = ARCH_TIMER_NS_EL1_IRQ,
++            [GTIMER_VIRT] = ARCH_TIMER_VIRT_IRQ,
++            [GTIMER_HYP]  = ARCH_TIMER_NS_EL2_IRQ,
++            [GTIMER_SEC]  = ARCH_TIMER_S_EL1_IRQ,
++        };
++
++        for (irq = 0; irq < ARRAY_SIZE(timer_irq); irq++) {
++            qdev_connect_gpio_out(cpudev, irq,
++                                  qdev_get_gpio_in(gicdev,
++                                                   ppibase + timer_irq[irq]));
++        }
++
++        if (type == 3) {
++            qemu_irq irq = qdev_get_gpio_in(gicdev,
++                                            ppibase + ARCH_GIC_MAINT_IRQ);
++            qdev_connect_gpio_out_named(cpudev, "gicv3-maintenance-interrupt",
++                                        0, irq);
++        } else if (fms->virt) {
++            qemu_irq irq = qdev_get_gpio_in(gicdev,
++                                            ppibase + ARCH_GIC_MAINT_IRQ);
++            sysbus_connect_irq(gicbusdev, i + 4 * smp_cpus, irq);
++        }
++
++        qdev_connect_gpio_out_named(cpudev, "pmu-interrupt", 0,
++                                    qdev_get_gpio_in(gicdev, ppibase
++                                                     + VIRTUAL_PMU_IRQ));
++
++        sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
++        sysbus_connect_irq(gicbusdev, i + smp_cpus,
++                           qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
++        sysbus_connect_irq(gicbusdev, i + 2 * smp_cpus,
++                           qdev_get_gpio_in(cpudev, ARM_CPU_VIRQ));
++        sysbus_connect_irq(gicbusdev, i + 3 * smp_cpus,
++                           qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
++    }
++
++    for (i = 0; i < NUM_IRQS; i++) {
++        pic[i] = qdev_get_gpio_in(gicdev, i);
++    }
++
++    if (type == 3 && fms->its) {
++        create_its(fms, gicdev);
++    } else if (type == 2) {
++        create_v2m(fms, pic);
++    }
++}
++
++static void create_sdhci(const AliusMachineState *fms,
++                         qemu_irq *pic, int sdhci)
++{
++    hwaddr base = fms->memmap[sdhci].base;
++    int irq = fms->irqmap[sdhci];
++    DeviceState *dev;
++    DriveInfo *di;
++    BlockBackend *blk;
++    DeviceState *carddev;
++
++    dev = qdev_new(TYPE_SYSBUS_SDHCI);
++    qdev_prop_set_uint8(dev, "sd-spec-version", 3);
++    qdev_prop_set_uint64(dev, "capareg", SDHCI_CAPABILITIES);
++    qdev_prop_set_uint64(dev, "uhs", UHS_I);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[irq]);
++    object_property_set_bool(OBJECT(dev), "realized", true, &error_fatal);
++
++    di = drive_get_next(IF_SD);
++    blk = di ? blk_by_legacy_dinfo(di) : NULL;
++    carddev = qdev_new(TYPE_SD_CARD);
++    qdev_prop_set_drive(carddev, "drive", blk);
++    qdev_realize_and_unref(carddev, qdev_get_child_bus(dev, "sd-bus"),
++                               &error_fatal);
++
++    object_property_set_bool(OBJECT(carddev), "realized", true,
++                             &error_fatal);
++}
++
++static void create_alius_pmc(const AliusMachineState *fms, int alius_pmc)
++{
++    hwaddr base = fms->memmap[alius_pmc].base;
++    DeviceState *dev;
++
++    dev = qdev_new(TYPE_ALIUS_PMC);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
++    object_property_set_bool(OBJECT(dev), "realized", true, &error_fatal);
++}
++
++static void create_nic(const AliusMachineState *fms,
++                       qemu_irq *pic, NICInfo *nd)
++{
++    hwaddr base = fms->memmap[ALIUS_NIC].base;
++    int irq = fms->irqmap[ALIUS_NIC];
++
++    DeviceState *dev;
++
++    qemu_check_nic_model(nd, "lan9118");
++    dev = qdev_new(TYPE_LAN9118);
++    qdev_set_nic_properties(dev, nd);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++
++    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[irq]);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
++}
++
++static void create_uart(const AliusMachineState *fms, qemu_irq *pic, int uart,
++                        MemoryRegion *mem, Chardev *chr)
++{
++    hwaddr base = fms->memmap[uart].base;
++    int irq = fms->irqmap[uart];
++
++    serial_mm_init(mem, base, 2,
++                       pic[irq], 115200, chr, DEVICE_LITTLE_ENDIAN);
++}
++
++static void create_rtc(const AliusMachineState *fms, qemu_irq *pic)
++{
++    hwaddr base = fms->memmap[ALIUS_RTC].base;
++    int irq = fms->irqmap[ALIUS_RTC];
++
++    sysbus_create_simple("pl031", base, pic[irq]);
++}
++
++static DeviceState *gpio_key_dev;
++static void alius_powerdown_req(Notifier *n, void *opaque)
++{
++    /* use gpio Pin 3 for power button event */
++    qemu_set_irq(qdev_get_gpio_in(gpio_key_dev, 0), 1);
++}
++
++static Notifier alius_system_powerdown_notifier = {
++    .notify = alius_powerdown_req
++};
++
++static void create_gpio(const AliusMachineState *fms, qemu_irq *pic)
++{
++    DeviceState *pl061_dev;
++    hwaddr base = fms->memmap[ALIUS_GPIO].base;
++    int irq = fms->irqmap[ALIUS_GPIO];
++
++    pl061_dev = sysbus_create_simple("pl061", base, pic[irq]);
++
++    gpio_key_dev = sysbus_create_simple("gpio-key", -1,
++                                        qdev_get_gpio_in(pl061_dev, 3));
++    /* connect powerdown request */
++    qemu_register_powerdown_notifier(&alius_system_powerdown_notifier);
++}
++
++static void create_virtio_devices(const AliusMachineState *fms, qemu_irq *pic)
++{
++    int i;
++    hwaddr size = fms->memmap[ALIUS_MMIO].size;
++
++    /* We create the transports in forwards order. Since qbus_realize()
++     * prepends (not appends) new child buses, the incrementing loop below will
++     * create a list of virtio-mmio buses with decreasing base addresses.
++     *
++     * When a -device option is processed from the command line,
++     * qbus_find_recursive() picks the next free virtio-mmio bus in forwards
++     * order. The upshot is that -device options in increasing command line
++     * order are mapped to virtio-mmio buses with decreasing base addresses.
++     *
++     * When this code was originally written, that arrangement ensured that the
++     * guest Linux kernel would give the lowest "name" (/dev/vda, eth0, etc) to
++     * the first -device on the command line. (The end-to-end order is a
++     * function of this loop, qbus_realize(), qbus_find_recursive(), and the
++     * guest kernel's name-to-address assignment strategy.)
++     *
++     * Meanwhile, the kernel's traversal seems to have been reversed; see eg.
++     * the message, if not necessarily the code, of commit 70161ff336.
++     * Therefore the loop now establishes the inverse of the original intent.
++     *
++     * Unfortunately, we can't counteract the kernel change by reversing the
++     * loop; it would break existing command lines.
++     *
++     * In any case, the kernel makes no guarantee about the stability of
++     * enumeration order of virtio devices (as demonstrated by it changing
++     * between kernel versions). For reliable and stable identification
++     * of disks users must use UUIDs or similar mechanisms.
++     */
++    for (i = 0; i < NUM_VIRTIO_TRANSPORTS; i++) {
++        int irq = fms->irqmap[ALIUS_MMIO] + i;
++        hwaddr base = fms->memmap[ALIUS_MMIO].base + i * size;
++
++        sysbus_create_simple("virtio-mmio", base, pic[irq]);
++    }
++}
++
++#define ALIUS_FLASH_SECTOR_SIZE (1 * KiB)
++
++static PFlashCFI01 *alius_flash_create1(AliusMachineState *fms,
++                                        const char *name,
++                                        const char *alias_prop_name)
++{
++    /*
++     * Create a single flash device.  We use the same parameters as
++     * the flash devices on the Versatile Express board.
++     */
++    DeviceState *dev = qdev_new(TYPE_PFLASH_CFI01);
++
++    qdev_prop_set_uint64(dev, "sector-length", ALIUS_FLASH_SECTOR_SIZE);
++    qdev_prop_set_uint8(dev, "width", 4);
++    qdev_prop_set_uint8(dev, "device-width", 2);
++    qdev_prop_set_bit(dev, "big-endian", false);
++    qdev_prop_set_uint16(dev, "id0", 0x89);
++    qdev_prop_set_uint16(dev, "id1", 0x18);
++    qdev_prop_set_uint16(dev, "id2", 0x00);
++    qdev_prop_set_uint16(dev, "id3", 0x00);
++    qdev_prop_set_string(dev, "name", name);
++    object_property_add_child(OBJECT(fms), name, OBJECT(dev));
++    object_property_add_alias(OBJECT(fms), alias_prop_name,
++                              OBJECT(dev), "drive");
++    return PFLASH_CFI01(dev);
++}
++
++static void alius_flash_create(AliusMachineState *fms)
++{
++    fms->flash[0] = alius_flash_create1(fms, "alius.flash0", "pflash0");
++//    fms->flash[1] = alius_flash_create1(fms, "alius.flash1", "pflash1");
++}
++
++static void alius_flash_map1(PFlashCFI01 *flash,
++                            hwaddr base, hwaddr size,
++                            MemoryRegion *sysmem)
++{
++    DeviceState *dev = DEVICE(flash);
++
++    assert(size % ALIUS_FLASH_SECTOR_SIZE == 0);
++    assert(size / ALIUS_FLASH_SECTOR_SIZE <= UINT32_MAX);
++    qdev_prop_set_uint32(dev, "num-blocks", size / ALIUS_FLASH_SECTOR_SIZE);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++
++    memory_region_add_subregion(sysmem, base,
++                                sysbus_mmio_get_region(SYS_BUS_DEVICE(dev),
++                                                       0));
++}
++
++static void alius_flash_map(AliusMachineState *fms,
++                           MemoryRegion *secure_sysmem)
++{
++    hwaddr flashsize = fms->memmap[ALIUS_FLASH].size;
++    hwaddr flashbase = fms->memmap[ALIUS_FLASH].base;
++
++    alius_flash_map1(fms->flash[0], flashbase, flashsize,
++                    secure_sysmem);
++}
++
++static bool alius_firmware_init(AliusMachineState *fms,
++                               MemoryRegion *secure_sysmem)
++{
++    int i;
++    BlockBackend *pflash_blk0;
++
++    /* Map legacy -drive if=pflash to machine properties */
++    for (i = 0; i < ARRAY_SIZE(fms->flash); i++) {
++        pflash_cfi01_legacy_drive(fms->flash[i],
++                                  drive_get(IF_PFLASH, 0, i));
++    }
++
++    alius_flash_map(fms, secure_sysmem);
++
++    pflash_blk0 = pflash_cfi01_get_blk(fms->flash[0]);
++
++    if (bios_name) {
++        char *fname;
++        MemoryRegion *mr;
++        int image_size;
++
++        if (pflash_blk0) {
++            error_report("The contents of the first flash device may be "
++                         "specified with -bios or with -drive if=pflash... "
++    /* const char compat[] = "arm,pl061\0arm,primecell"; luke */
++                         "but you cannot use both options at once");
++            exit(1);
++        }
++
++        /* Fall back to -bios */
++
++        fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
++        if (!fname) {
++            error_report("Could not find ROM image '%s'", bios_name);
++            exit(1);
++        }
++        mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(fms->flash[0]), 0);
++        image_size = load_image_mr(fname, mr);
++        g_free(fname);
++        if (image_size < 0) {
++            error_report("Could not load ROM image '%s'", bios_name);
++            exit(1);
++        }
++    }
++
++    return pflash_blk0 || bios_name;
++}
++
++static void alius_load_rom(AliusMachineState *fms)
++{
++    int rom_size = 0;
++    if (nb_option_roms) {
++        rom_size = get_image_size(option_rom[0].name);
++        if (rom_size > fms->memmap[ALIUS_FAKE_FLASH].size) {
++            fprintf(stderr, "%s: ROM image too big (%x > %x)\n",
++                            __func__, rom_size,
++			    (unsigned int)fms->memmap[ALIUS_FAKE_FLASH].size);
++            rom_size = 0;
++        }
++        if (rom_size > 0)
++            rom_size = load_image_targphys(option_rom[0].name,
++	                                   fms->memmap[ALIUS_FAKE_FLASH].base,
++                                           fms->memmap[ALIUS_FAKE_FLASH].size);
++        if (rom_size < 0)
++            fprintf(stderr, "%s: error loading '%s'\n",
++                            __func__, option_rom[0].name);
++    }
++}
++
++static FWCfgState *create_fw_cfg(const AliusMachineState *fms, AddressSpace *as)
++{
++    MachineState *ms = MACHINE(fms);
++    hwaddr base = fms->memmap[ALIUS_FW_CFG].base;
++    FWCfgState *fw_cfg;
++
++    fw_cfg = fw_cfg_init_mem_wide(base + 8, base, 8, base + 16, as);
++    fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, (uint16_t)ms->smp.cpus);
++
++    return fw_cfg;
++}
++
++static void create_smmu(const AliusMachineState *fms, qemu_irq *pic,
++                        PCIBus *bus)
++{
++    int irq =  fms->irqmap[ALIUS_SMMU];
++    int i;
++    hwaddr base = fms->memmap[ALIUS_SMMU].base;
++    DeviceState *dev;
++
++    if (fms->iommu != ALIUS_IOMMU_SMMUV3 || !fms->iommu_phandle) {
++        return;
++    }
++
++    dev = qdev_new("arm-smmuv3");
++
++    object_property_set_link(OBJECT(dev), "primary-bus", OBJECT(bus),
++                             &error_abort);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
++    for (i = 0; i < NUM_SMMU_IRQS; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, pic[irq + i]);
++    }
++}
++
++static void create_pcie(AliusMachineState *fms, qemu_irq *pic)
++{
++    hwaddr base_mmio = fms->memmap[ALIUS_PCIE_MMIO].base;
++    hwaddr size_mmio = fms->memmap[ALIUS_PCIE_MMIO].size;
++    hwaddr base_mmio_high = fms->memmap[ALIUS_HIGH_PCIE_MMIO].base;
++    hwaddr size_mmio_high = fms->memmap[ALIUS_HIGH_PCIE_MMIO].size;
++    hwaddr base_pio = fms->memmap[ALIUS_PCIE_PIO].base;
++    hwaddr base_ecam, size_ecam;
++    int irq = fms->irqmap[ALIUS_PCIE];
++    MemoryRegion *mmio_alias;
++    MemoryRegion *mmio_reg;
++    MemoryRegion *ecam_alias;
++    MemoryRegion *ecam_reg;
++    DeviceState *dev;
++    int i, ecam_id;
++    PCIHostState *pci;
++
++    dev = qdev_new(TYPE_GPEX_HOST);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++
++    ecam_id = ALIUS_ECAM_ID(fms->highmem_ecam);
++    base_ecam = fms->memmap[ecam_id].base;
++    size_ecam = fms->memmap[ecam_id].size;
++    /* Map only the first size_ecam bytes of ECAM space */
++    ecam_alias = g_new0(MemoryRegion, 1);
++    ecam_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0);
++    memory_region_init_alias(ecam_alias, OBJECT(dev), "pcie-ecam",
++                             ecam_reg, 0, size_ecam);
++    memory_region_add_subregion(get_system_memory(), base_ecam, ecam_alias);
++
++    /* Map the MMIO window into system address space so as to expose
++     * the section of PCI MMIO space which starts at the same base address
++     * (ie 1:1 mapping for that part of PCI MMIO space visible through
++     * the window).
++     */
++    mmio_alias = g_new0(MemoryRegion, 1);
++    mmio_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 1);
++    memory_region_init_alias(mmio_alias, OBJECT(dev), "pcie-mmio",
++                             mmio_reg, base_mmio, size_mmio);
++    memory_region_add_subregion(get_system_memory(), base_mmio, mmio_alias);
++
++    if (fms->highmem) {
++        /* Map high MMIO space */
++        MemoryRegion *high_mmio_alias = g_new0(MemoryRegion, 1);
++
++        memory_region_init_alias(high_mmio_alias, OBJECT(dev), "pcie-mmio-high",
++                                 mmio_reg, base_mmio_high, size_mmio_high);
++        memory_region_add_subregion(get_system_memory(), base_mmio_high,
++                                    high_mmio_alias);
++    }
++
++    /* Map IO port space */
++    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 2, base_pio);
++
++    for (i = 0; i < GPEX_NUM_IRQS; i++) {
++        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, pic[irq + i]);
++        gpex_set_irq_num(GPEX_HOST(dev), i, irq + i);
++    }
++
++    pci = PCI_HOST_BRIDGE(dev);
++
++    if (nd_table[0].used) {
++        create_nic(fms, pic, nd_table);
++    }
++
++    if (fms->iommu) {
++        create_smmu(fms, pic, pci->bus);
++    }
++}
++
++static void create_platform_bus(AliusMachineState *fms, qemu_irq *pic)
++{
++    DeviceState *dev;
++    SysBusDevice *s;
++    int i;
++    MemoryRegion *sysmem = get_system_memory();
++
++    dev = qdev_new(TYPE_PLATFORM_BUS_DEVICE);
++    dev->id = TYPE_PLATFORM_BUS_DEVICE;
++    qdev_prop_set_uint32(dev, "num_irqs", PLATFORM_BUS_NUM_IRQS);
++    qdev_prop_set_uint32(dev, "mmio_size", fms->memmap[ALIUS_PLATFORM_BUS].size);
++    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
++    fms->platform_bus_dev = dev;
++
++    s = SYS_BUS_DEVICE(dev);
++    for (i = 0; i < PLATFORM_BUS_NUM_IRQS; i++) {
++        int irqn = fms->irqmap[ALIUS_PLATFORM_BUS] + i;
++        sysbus_connect_irq(s, i, pic[irqn]);
++    }
++
++    memory_region_add_subregion(sysmem,
++                                fms->memmap[ALIUS_PLATFORM_BUS].base,
++                                sysbus_mmio_get_region(s, 0));
++}
++
++static void create_secure_ram(AliusMachineState *fms,
++                              MemoryRegion *secure_sysmem)
++{
++    MemoryRegion *secram = g_new(MemoryRegion, 1);
++    hwaddr base = fms->memmap[ALIUS_SECURE_MEM].base;
++    hwaddr size = fms->memmap[ALIUS_SECURE_MEM].size;
++
++    memory_region_init_ram(secram, NULL, "alius.secure-ram", size,
++                           &error_fatal);
++    memory_region_add_subregion(secure_sysmem, base, secram);
++}
++
++static void alius_build_smbios(AliusMachineState *fms)
++{
++    MachineClass *mc = MACHINE_GET_CLASS(fms);
++    AliusMachineClass *fmc = ALIUS_MACHINE_GET_CLASS(fms);
++    uint8_t *smbios_tables, *smbios_anchor;
++    size_t smbios_tables_len, smbios_anchor_len;
++    const char *product = "QEMU Aliusual Machine";
++
++    if (kvm_enabled()) {
++        product = "KVM Aliusual Machine";
++    }
++
++    smbios_set_defaults("QEMU", product,
++                        fmc->smbios_old_sys_ver ? "1.0" : mc->name, false,
++                        true, SMBIOS_ENTRY_POINT_30);
++
++    smbios_get_tables(MACHINE(fms), NULL, 0, &smbios_tables, &smbios_tables_len,
++                      &smbios_anchor, &smbios_anchor_len);
++
++    if (smbios_anchor) {
++        fw_cfg_add_file(fms->fw_cfg, "etc/smbios/smbios-tables",
++                        smbios_tables, smbios_tables_len);
++        fw_cfg_add_file(fms->fw_cfg, "etc/smbios/smbios-anchor",
++                        smbios_anchor, smbios_anchor_len);
++    }
++}
++
++static
++void alius_machine_done(Notifier *notifier, void *data)
++{
++    AliusMachineState *fms = container_of(notifier, AliusMachineState,
++                                         machine_done);
++    alius_build_smbios(fms);
++}
++
++static uint64_t alius_cpu_mp_affinity(AliusMachineState *fms, int idx)
++{
++    uint8_t clustersz = ARM_DEFAULT_CPUS_PER_CLUSTER;
++    AliusMachineClass *fmc = ALIUS_MACHINE_GET_CLASS(fms);
++
++    if (!fmc->disallow_affinity_adjustment) {
++        /* Adjust MPIDR like 64-bit KVM hosts, which incorporate the
++         * GIC's target-list limitations. 32-bit KVM hosts currently
++         * always create clusters of 4 CPUs, but that is expected to
++         * change when they gain support for gicv3. When KVM is enabled
++         * it will override the changes we make here, therefore our
++         * purposes are to make TCG consistent (with 64-bit KVM hosts)
++         * and to improve SGI efficiency.
++         */
++        if (fms->gic_version == 3) {
++            clustersz = GICV3_TARGETLIST_BITS;
++        } else {
++            clustersz = GIC_TARGETLIST_BITS;
++        }
++    }
++    return arm_cpu_mp_affinity(idx, clustersz);
++}
++
++static void alius_set_memmap(AliusMachineState *fms)
++{
++    MachineState *ms = MACHINE(fms);
++    hwaddr base, device_memory_base, device_memory_size;
++    int i;
++
++    fms->memmap = extended_memmap;
++
++    for (i = 0; i < ARRAY_SIZE(base_memmap); i++) {
++        fms->memmap[i] = base_memmap[i];
++    }
++
++    if (ms->ram_slots > ACPI_MAX_RAM_SLOTS) {
++        error_report("unsupported number of memory slots: %"PRIu64,
++                     ms->ram_slots);
++        exit(EXIT_FAILURE);
++    }
++
++    /*
++     * We compute the base of the high IO region depending on the
++     * amount of initial and device memory. The device memory start/size
++     * is aligned on 1GiB. We never put the high IO region below 256GiB
++     * so that if maxram_size is < 255GiB we keep the legacy memory map.
++     * The device region size assumes 1GiB page max alignment per slot.
++     */
++    device_memory_base =
++        ROUND_UP(fms->memmap[ALIUS_DDR1].base + ms->ram_size, GiB);
++    device_memory_size = ms->maxram_size - ms->ram_size + ms->ram_slots * GiB;
++
++    /* Base address of the high IO region */
++    base = device_memory_base + ROUND_UP(device_memory_size, GiB);
++    if (base < device_memory_base) {
++        error_report("maxmem/slots too huge");
++        exit(EXIT_FAILURE);
++    }
++    if (base < fms->memmap[ALIUS_DDR1].base + LEGACY_RAMLIMIT_BYTES) {
++        base = fms->memmap[ALIUS_DDR1].base + LEGACY_RAMLIMIT_BYTES;
++    }
++
++    for (i = ALIUS_LOWMEMMAP_LAST; i < ARRAY_SIZE(extended_memmap); i++) {
++        hwaddr size = extended_memmap[i].size;
++
++        base = ROUND_UP(base, size);
++        fms->memmap[i].base = base;
++        fms->memmap[i].size = size;
++        base += size;
++    }
++    fms->highest_gpa = base - 1;
++    if (device_memory_size > 0) {
++        ms->device_memory = g_malloc0(sizeof(*ms->device_memory));
++        ms->device_memory->base = device_memory_base;
++        memory_region_init(&ms->device_memory->mr, OBJECT(fms),
++                           "device-memory", device_memory_size);
++    }
++}
++
++static void machalius_init(MachineState *machine)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(machine);
++    AliusMachineClass *fmc = ALIUS_MACHINE_GET_CLASS(machine);
++    MachineClass *mc = MACHINE_GET_CLASS(machine);
++    const CPUArchIdList *possible_cpus;
++    qemu_irq pic[NUM_IRQS];
++    MemoryRegion *sysmem = get_system_memory();
++    MemoryRegion *secure_sysmem = NULL;
++    int n, alius_max_cpus;
++    MemoryRegion *ddr1 = g_new(MemoryRegion, 1);
++    MemoryRegion *sram0 = g_new(MemoryRegion, 1);
++    MemoryRegion *sram1 = g_new(MemoryRegion, 1);
++    MemoryRegion *fake_flash = g_new(MemoryRegion, 1);
++    MemoryRegion *ddr0 = g_new(MemoryRegion, 1);
++ 
++    /* const char compat[] = "arm,pl061\0arm,primecell"; luke */
++    bool firmware_loaded;
++    bool aarch64 = true;
++    unsigned int smp_cpus = machine->smp.cpus;
++    unsigned int max_cpus = machine->smp.max_cpus;
++
++    /*
++     * In accelerated mode, the memory map is computed earlier in kvm_type()
++     * to create a VM with the right number of IPA bits.
++     */
++    if (!fms->memmap) {
++        alius_set_memmap(fms);
++    }
++
++    /* We can probe only here because during property set
++     * KVM is not available yet
++     */
++    if (fms->gic_version <= 0) {
++        /* "host" or "max" */
++        if (!kvm_enabled()) {
++            if (fms->gic_version == 0) {
++                error_report("gic-version=host requires KVM");
++                exit(1);
++            } else {
++                /* "max": currently means 3 for TCG */
++                fms->gic_version = 3;
++            }
++        } else {
++            fms->gic_version = kvm_arm_vgic_probe();
++            if (!fms->gic_version) {
++                error_report(
++                    "Unable to determine GIC version supported by host");
++                exit(1);
++            }
++        }
++    }
++
++    if (!cpu_type_valid(machine->cpu_type)) {
++        error_report("mach-alius: CPU type %s not supported", machine->cpu_type);
++        exit(1);
++    }
++
++    if (fms->secure) {
++        if (kvm_enabled()) {
++            error_report("mach-alius: KVM does not support Security extensions");
++            exit(1);
++        }
++
++        /*
++         * The Secure view of the world is the same as the NonSecure,
++         * but with a few extra devices. Create it as a container region
++         * containing the system memory at low priority; any secure-only
++         * devices go in at higher priority and take precedence.
++         */
++        secure_sysmem = g_new(MemoryRegion, 1);
++        memory_region_init(secure_sysmem, OBJECT(machine), "secure-memory",
++                           UINT64_MAX);
++        memory_region_add_subregion_overlap(secure_sysmem, 0, sysmem, -1);
++    }
++
++    firmware_loaded = alius_firmware_init(fms,
++                                         secure_sysmem ?: sysmem);
++
++    /* If we have an EL3 boot ROM then the assumption is that it will
++     * implement PSCI itself, so disable QEMU's internal implementation
++     * so it doesn't get in the way. Instead of starting secondary
++     * CPUs in PSCI powerdown state we will start them all running and
++     * let the boot ROM sort them out.
++     * The usual case is that we do use QEMU's PSCI implementation;
++     * if the guest has EL2 then we will use SMC as the conduit,
++     * and otherwise we will use HVC (for backwards compatibility and
++     * because if we're using KVM then we must use HVC).
++     */
++    if ((fms->secure && firmware_loaded) || (fms->psci == false)) {
++        fms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
++    } else if (fms->virt) {
++        fms->psci_conduit = QEMU_PSCI_CONDUIT_SMC;
++    } else {
++        fms->psci_conduit = QEMU_PSCI_CONDUIT_HVC;
++    }
++
++    /* The maximum number of CPUs depends on the GIC version, or on how
++     * many redistributors we can fit into the memory map.
++     */
++    if (fms->gic_version == 3) {
++        alius_max_cpus =
++            fms->memmap[ALIUS_GIC_REDIST].size / GICV3_REDIST_SIZE;
++        alius_max_cpus +=
++            fms->memmap[ALIUS_HIGH_GIC_REDIST2].size / GICV3_REDIST_SIZE;
++    } else {
++        alius_max_cpus = GIC_NCPU;
++    }
++
++    if (max_cpus > alius_max_cpus) {
++        error_report("Number of SMP CPUs requested (%d) exceeds max CPUs "
++                     "supported by machine 'mach-alius' (%d)",
++                     max_cpus, alius_max_cpus);
++        exit(1);
++    }
++
++    fms->smp_cpus = smp_cpus;
++
++    if (fms->virt && kvm_enabled()) {
++        error_report("mach-alius: KVM does not support providing "
++                     "Aliusualization extensions to the guest CPU");
++        exit(1);
++    }
++
++    possible_cpus = mc->possible_cpu_arch_ids(machine);
++    for (n = 0; n < possible_cpus->len; n++) {
++        Object *cpuobj;
++        CPUState *cs;
++
++        if (n >= smp_cpus) {
++            break;
++        }
++
++        cpuobj = object_new(possible_cpus->cpus[n].type);
++        object_property_set_int(cpuobj, "mp-affinity",
++                                possible_cpus->cpus[n].arch_id,
++                                NULL);
++
++        cs = CPU(cpuobj);
++        cs->cpu_index = n;
++
++        numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
++                          &error_fatal);
++
++	object_property_set_bool(cpuobj, "aarch64", false, NULL);
++        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
++        if (!fms->secure) {
++            object_property_set_bool(cpuobj, "has_el3", false, NULL);
++        }
++
++        if (!fms->virt && object_property_find(cpuobj, "has_el2")) {
++            object_property_set_bool(cpuobj, "has_el2", false, NULL);
++        }
++
++        if (fms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
++            object_property_set_int(cpuobj, "psci-conduit", fms->psci_conduit,
++                                    NULL);
++
++            /* Secondary CPUs start in PSCI powered-down state */
++            if (n > 0) {
++                object_property_set_bool(cpuobj,
++                                         "start-powered-off", true, NULL);
++            }
++        }
++
++        if (fmc->no_pmu && object_property_find(cpuobj, "pmu")) {
++            object_property_set_bool(cpuobj, "pmu", false, NULL);
++        }
++
++        if (object_property_find(cpuobj, "reset-cbar")) {
++            object_property_set_int(cpuobj, "reset-cbar",
++                                    fms->memmap[ALIUS_CPUPERIPHS].base,
++                                    &error_abort);
++        }
++
++        object_property_set_link(cpuobj, "memory", OBJECT(sysmem),
++                                 &error_abort);
++        if (fms->secure) {
++            object_property_set_link(cpuobj, "secure-memory",
++	    				OBJECT(secure_sysmem), &error_abort);
++        }
++
++        object_property_set_bool(cpuobj, "realized", true, &error_fatal);
++        object_unref(cpuobj);
++    }
++
++    if (!kvm_enabled()) {
++        ARMCPU *cpu = ARM_CPU(first_cpu);
++        bool aarch64 = object_property_get_bool(OBJECT(cpu), "aarch64", NULL);
++
++        if (aarch64 && fms->highmem) {
++            int requested_pa_size, pamax = arm_pamax(cpu);
++
++            requested_pa_size = 64 - clz64(fms->highest_gpa);
++            if (pamax < requested_pa_size) {
++                error_report("VCPU supports less PA bits (%d) than requested "
++                            "by the memory map (%d)", pamax, requested_pa_size);
++                exit(1);
++            }
++        }
++    }
++
++    memory_region_init_ram(ddr1, NULL, "mach-alius.ddr1",
++                                         machine->ram_size, &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_DDR1].base, ddr1);
++    if (machine->device_memory) {
++        memory_region_add_subregion(sysmem, machine->device_memory->base,
++                                    &machine->device_memory->mr);
++    }
++    /* SRAM 0 */
++    memory_region_init_ram(sram0, NULL, "mach-alius.sram0",
++                                         fms->memmap[ALIUS_SRAM0].size,
++                                         &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_SRAM0].base, sram0);
++
++    /* SRAM 1 */
++    memory_region_init_ram(sram1, NULL, "mach-alius.sram1",
++                                         fms->memmap[ALIUS_SRAM1].size,
++                                         &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_SRAM1].base, sram1);
++
++    /* fake Flash */
++    memory_region_init_ram(fake_flash, NULL,
++    					 "mach-alius.fake_flash",
++                                         fms->memmap[ALIUS_FAKE_FLASH].size,
++                                         &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_FAKE_FLASH].base,
++    					 fake_flash);
++
++    alius_load_rom(fms);
++
++    memory_region_init_ram(ddr0, NULL,
++    					 "mach-alius.ddr0",
++                                         fms->memmap[ALIUS_DDR0].size,
++                                         &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_DDR0].base,
++    					 ddr0);
++
++    create_gic(fms, pic);
++
++    create_uart(fms, pic, ALIUS_UART, sysmem, serial_hd(0));
++
++    if (fms->secure) {
++        create_secure_ram(fms, secure_sysmem);
++        create_uart(fms, pic, ALIUS_SECURE_UART, secure_sysmem, serial_hd(1));
++    }
++
++    create_sdhci(fms, pic, ALIUS_SDHCI);
++
++    create_alius_pmc(fms, ALIUS_PMC);
++
++    fms->highmem_ecam &= fms->highmem && (!firmware_loaded || aarch64);
++
++    create_rtc(fms, pic);
++
++    create_pcie(fms, pic);
++
++    create_gpio(fms, pic);
++
++    /* Create mmio transports, so the user can create virtio backends
++     * (which will be automatically plugged in to the transports). If
++     * no backend is created the transport will just sit harmlessly idle.
++     */
++    create_virtio_devices(fms, pic);
++
++    fms->fw_cfg = create_fw_cfg(fms, &address_space_memory);
++    rom_set_fw(fms->fw_cfg);
++
++    create_platform_bus(fms, pic);
++
++    fms->bootinfo.ram_size = machine->ram_size;
++    fms->bootinfo.kernel_filename = machine->kernel_filename;
++    fms->bootinfo.kernel_cmdline = machine->kernel_cmdline;
++    fms->bootinfo.initrd_filename = machine->initrd_filename;
++    fms->bootinfo.nb_cpus = smp_cpus;
++    fms->bootinfo.board_id = -1;
++    fms->bootinfo.loader_start = fms->memmap[ALIUS_DDR0].base;
++    fms->bootinfo.smp_loader_start = fms->memmap[ALIUS_SRAM0].base;
++    fms->bootinfo.smp_bootreg_addr = fms->memmap[ALIUS_BOOT_CFG].base;
++    fms->bootinfo.gic_cpu_if_addr = fms->memmap[ALIUS_GIC_CPU].base;
++    fms->bootinfo.skip_dtb_autoload = false;
++    fms->bootinfo.firmware_loaded = firmware_loaded;
++    arm_load_kernel(ARM_CPU(first_cpu), machine, &fms->bootinfo);
++
++    if (fms->gic_wa == true)
++        gic_initialization_workaround(&fms->bootinfo);
++
++    fms->machine_done.notify = alius_machine_done;
++    qemu_add_machine_init_done_notifier(&fms->machine_done);
++}
++
++static bool alius_get_secure(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->secure;
++}
++
++static void alius_set_secure(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->secure = value;
++}
++
++static bool alius_get_psci(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->psci;
++}
++
++static void alius_set_psci(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->psci = value;
++}
++
++static bool alius_get_gic_wa(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->gic_wa;
++}
++
++static void alius_set_gic_wa(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->gic_wa = value;
++}
++
++static bool alius_get_hetero(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->hetero;
++}
++
++static void alius_set_hetero(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->hetero = value;
++}
++
++static bool alius_get_virt(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->virt;
++}
++
++static void alius_set_virt(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->virt = value;
++}
++
++static bool alius_get_highmem(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->highmem;
++}
++
++static void alius_set_highmem(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->highmem = value;
++}
++
++static bool alius_get_its(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    return fms->its;
++}
++
++static void alius_set_its(Object *obj, bool value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    fms->its = value;
++}
++
++static char *alius_get_gic_version(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++    const char *val = fms->gic_version == 3 ? "3" : "2";
++
++    return g_strdup(val);
++}
++
++static void alius_set_gic_version(Object *obj, const char *value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    if (!strcmp(value, "3")) {
++        fms->gic_version = 3;
++    } else if (!strcmp(value, "2")) {
++        fms->gic_version = 2;
++    } else if (!strcmp(value, "host")) {
++        fms->gic_version = 0; /* Will probe later */
++    } else if (!strcmp(value, "max")) {
++        fms->gic_version = -1; /* Will probe later */
++    } else {
++        error_setg(errp, "Invalid gic-version value");
++        error_append_hint(errp, "Valid values are 3, 2, host, max.\n");
++    }
++}
++
++static char *alius_get_iommu(Object *obj, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    switch (fms->iommu) {
++    case ALIUS_IOMMU_NONE:
++        return g_strdup("none");
++    case ALIUS_IOMMU_SMMUV3:
++        return g_strdup("smmuv3");
++    default:
++        g_assert_not_reached();
++    }
++}
++
++static void alius_set_iommu(Object *obj, const char *value, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++
++    if (!strcmp(value, "smmuv3")) {
++        fms->iommu = ALIUS_IOMMU_SMMUV3;
++    } else if (!strcmp(value, "none")) {
++        fms->iommu = ALIUS_IOMMU_NONE;
++    } else {
++        error_setg(errp, "Invalid iommu value");
++        error_append_hint(errp, "Valid values are none, smmuv3.\n");
++    }
++}
++
++static CpuInstanceProperties
++alius_cpu_index_to_props(MachineState *ms, unsigned cpu_index)
++{
++    MachineClass *mc = MACHINE_GET_CLASS(ms);
++    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
++
++    assert(cpu_index < possible_cpus->len);
++    return possible_cpus->cpus[cpu_index].props;
++}
++
++static int64_t alius_get_default_cpu_node_id(const MachineState *ms, int idx)
++{
++    return idx % ms->numa_state->num_nodes;
++}
++
++static const CPUArchIdList *alius_possible_cpu_arch_ids(MachineState *ms)
++{
++    int n;
++    unsigned int max_cpus = ms->smp.max_cpus;
++    AliusMachineState *fms = ALIUS_MACHINE(ms);
++
++    if (ms->possible_cpus) {
++        assert(ms->possible_cpus->len == max_cpus);
++        return ms->possible_cpus;
++    }
++
++    ms->possible_cpus = g_malloc0(sizeof(CPUArchIdList) +
++                                  sizeof(CPUArchId) * max_cpus);
++    ms->possible_cpus->len = max_cpus;
++    for (n = 0; n < ms->possible_cpus->len; n++) {
++        if (fms->hetero == true) {
++            if (n < 4)
++                ms->possible_cpus->cpus[n].type = ARM_CPU_TYPE_NAME("cortex-a55");
++	    else
++                ms->possible_cpus->cpus[n].type = ARM_CPU_TYPE_NAME("cortex-a77");
++	} else {
++            ms->possible_cpus->cpus[n].type = ms->cpu_type;
++	}
++        ms->possible_cpus->cpus[n].arch_id =
++            alius_cpu_mp_affinity(fms, n);
++        ms->possible_cpus->cpus[n].props.has_thread_id = true;
++        ms->possible_cpus->cpus[n].props.thread_id = n;
++    }
++    return ms->possible_cpus;
++}
++
++static void alius_machine_device_plug_cb(HotplugHandler *hotplug_dev,
++                                        DeviceState *dev, Error **errp)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(hotplug_dev);
++
++    if (fms->platform_bus_dev) {
++        if (object_dynamic_cast(OBJECT(dev), TYPE_SYS_BUS_DEVICE)) {
++            platform_bus_link_device(PLATFORM_BUS_DEVICE(fms->platform_bus_dev),
++                                     SYS_BUS_DEVICE(dev));
++        }
++    }
++}
++
++static HotplugHandler *alius_machine_get_hotplug_handler(MachineState *machine,
++                                                        DeviceState *dev)
++{
++    if (object_dynamic_cast(OBJECT(dev), TYPE_SYS_BUS_DEVICE)) {
++        return HOTPLUG_HANDLER(machine);
++    }
++
++    return NULL;
++}
++
++/*
++ * for arm64 kvm_type [7-0] encodes the requested number of bits
++ * in the IPA address space
++ */
++static int alius_kvm_type(MachineState *ms, const char *type_str)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(ms);
++    int max_vm_pa_size = kvm_arm_get_max_vm_ipa_size(ms);
++    int requested_pa_size;
++
++    /* we freeze the memory map to compute the highest gpa */
++    alius_set_memmap(fms);
++
++    requested_pa_size = 64 - clz64(fms->highest_gpa);
++
++    if (requested_pa_size > max_vm_pa_size) {
++        error_report("-m and ,maxmem option values "
++                     "require an IPA range (%d bits) larger than "
++                     "the one supported by the host (%d bits)",
++                     requested_pa_size, max_vm_pa_size);
++       exit(1);
++    }
++    /*
++     * By default we return 0 which corresponds to an implicit legacy
++     * 40b IPA setting. Otherwise we return the actual requested PA
++     * logsize
++     */
++    return requested_pa_size > 40 ? requested_pa_size : 0;
++}
++
++static void alius_machine_class_init(ObjectClass *oc, void *data)
++{
++    MachineClass *mc = MACHINE_CLASS(oc);
++    HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
++
++    mc->init = machalius_init;
++    /* Start with max_cpus set to 512, which is the maximum supported by KVM.
++     * The value may be reduced later when we have more information about the
++     * configuration of the particular instance.
++     */
++    mc->max_cpus = 512;
++    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_CALXEDA_XGMAC);
++    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_AMD_XGBE);
++    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);
++    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_PLATFORM);
++    mc->block_default_type = IF_VIRTIO;
++    mc->no_cdrom = 1;
++    mc->pci_allow_0_address = true;
++    /* We know we will never create a pre-ARMv7 CPU which needs 1K pages */
++    mc->minimum_page_bits = 12;
++    mc->possible_cpu_arch_ids = alius_possible_cpu_arch_ids;
++    mc->cpu_index_to_instance_props = alius_cpu_index_to_props;
++    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a15");
++    mc->get_default_cpu_node_id = alius_get_default_cpu_node_id;
++    mc->kvm_type = alius_kvm_type;
++    assert(!mc->get_hotplug_handler);
++    mc->get_hotplug_handler = alius_machine_get_hotplug_handler;
++    hc->plug = alius_machine_device_plug_cb;
++    mc->numa_mem_supported = true;
++}
++
++static void alius_instance_init(Object *obj)
++{
++    AliusMachineState *fms = ALIUS_MACHINE(obj);
++    AliusMachineClass *fmc = ALIUS_MACHINE_GET_CLASS(fms);
++
++    /* EL3 is disabled by default on alius: this makes us consistent
++     * between KVM and TCG for this board, and it also allows us to
++     * boot UEFI blobs which assume no TrustZone support.
++     */
++    fms->secure = false;
++    object_property_add_bool(obj, "secure", alius_get_secure,
++                             alius_set_secure);
++    object_property_set_description(obj, "secure",
++                                    "Set on/off to enable/disable the ARM "
++                                    "Security Extensions (TrustZone)");
++
++    fms->psci = true;
++    object_property_add_bool(obj, "psci", alius_get_psci,
++                             alius_set_psci);
++    object_property_set_description(obj, "psci",
++                                    "Set off to disable PSCI");
++
++    fms->hetero = false;
++    object_property_add_bool(obj, "hetero", alius_get_hetero,
++                             alius_set_hetero);
++    object_property_set_description(obj, "hetero",
++                                    "Set on/off to enable/disable heterogeneous");
++
++    fms->gic_wa = false;
++    object_property_add_bool(obj, "gic-wa", alius_get_gic_wa,
++                             alius_set_gic_wa);
++    object_property_set_description(obj, "gic-wa",
++                                    "Set on/off to enable/disable GIC "
++                                    "initialization workaround while creating "
++                                    "virtual platform");
++
++    /* EL2 is also disabled by default, for similar reasons */
++    fms->virt = false;
++    object_property_add_bool(obj, "virtualization", alius_get_virt,
++                             alius_set_virt);
++    object_property_set_description(obj, "virtualization",
++                                    "Set on/off to enable/disable emulating a "
++                                    "guest CPU which implements the ARM "
++                                    "Aliusualization Extensions");
++
++    /* High memory is enabled by default */
++    fms->highmem = true;
++    object_property_add_bool(obj, "highmem", alius_get_highmem,
++                             alius_set_highmem);
++    object_property_set_description(obj, "highmem",
++                                    "Set on/off to enable/disable using "
++                                    "physical address space above 32 bits");
++    /* Default GIC type is v2 */
++    fms->gic_version = 2;
++    object_property_add_str(obj, "gic-version", alius_get_gic_version,
++                        alius_set_gic_version);
++    object_property_set_description(obj, "gic-version",
++                                    "Set GIC version. "
++                                    "Valid values are 2, 3 and host");
++
++    fms->highmem_ecam = !fmc->no_highmem_ecam;
++
++    if (fmc->no_its) {
++        fms->its = false;
++    } else {
++        /* Default allows ITS instantiation */
++        fms->its = true;
++        object_property_add_bool(obj, "its", alius_get_its,
++                                 alius_set_its);
++        object_property_set_description(obj, "its",
++                                        "Set on/off to enable/disable "
++                                        "ITS instantiation");
++    }
++
++    /* Default disallows iommu instantiation */
++    fms->iommu = ALIUS_IOMMU_NONE;
++    object_property_add_str(obj, "iommu", alius_get_iommu, alius_set_iommu);
++    object_property_set_description(obj, "iommu",
++                                    "Set the IOMMU type. "
++                                    "Valid values are none and smmuv3");
++
++    fms->irqmap = a15irqmap;
++
++    alius_flash_create(fms);
++}
++
++static const TypeInfo alius_machine_info = {
++    .name          = TYPE_ALIUS_MACHINE,
++    .parent        = TYPE_MACHINE,
++    .abstract      = true,
++    .instance_size = sizeof(AliusMachineState),
++    .class_size    = sizeof(AliusMachineClass),
++    .class_init    = alius_machine_class_init,
++    .instance_init = alius_instance_init,
++    .interfaces = (InterfaceInfo[]) {
++         { TYPE_HOTPLUG_HANDLER },
++         { }
++    },
++};
++
++static void machalius_machine_init(void)
++{
++    type_register_static(&alius_machine_info);
++}
++type_init(machalius_machine_init);
++
++static void alius_machine_4_1_options(MachineClass *mc)
++{
++}
++DEFINE_ALIUS_MACHINE_AS_LATEST(4, 1)
++
++static void alius_machine_4_0_options(MachineClass *mc)
++{
++    alius_machine_4_1_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_4_0, hw_compat_4_0_len);
++}
++DEFINE_ALIUS_MACHINE(4, 0)
++
++static void alius_machine_3_1_options(MachineClass *mc)
++{
++    alius_machine_4_0_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_3_1, hw_compat_3_1_len);
++}
++DEFINE_ALIUS_MACHINE(3, 1)
++
++static void alius_machine_3_0_options(MachineClass *mc)
++{
++    alius_machine_3_1_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_3_0, hw_compat_3_0_len);
++}
++DEFINE_ALIUS_MACHINE(3, 0)
++
++static void alius_machine_2_12_options(MachineClass *mc)
++{
++    AliusMachineClass *fmc = ALIUS_MACHINE_CLASS(OBJECT_CLASS(mc));
++
++    alius_machine_3_0_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_12, hw_compat_2_12_len);
++    fmc->no_highmem_ecam = true;
++    mc->max_cpus = 255;
++}
++DEFINE_ALIUS_MACHINE(2, 12)
++
++static void alius_machine_2_11_options(MachineClass *mc)
++{
++    AliusMachineClass *fmc = ALIUS_MACHINE_CLASS(OBJECT_CLASS(mc));
++
++    alius_machine_2_12_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_11, hw_compat_2_11_len);
++    fmc->smbios_old_sys_ver = true;
++}
++DEFINE_ALIUS_MACHINE(2, 11)
++
++static void alius_machine_2_10_options(MachineClass *mc)
++{
++    alius_machine_2_11_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_10, hw_compat_2_10_len);
++    /* before 2.11 we never faulted accesses to bad addresses */
++    mc->ignore_memory_transaction_failures = true;
++}
++DEFINE_ALIUS_MACHINE(2, 10)
++
++static void alius_machine_2_9_options(MachineClass *mc)
++{
++    alius_machine_2_10_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_9, hw_compat_2_9_len);
++}
++DEFINE_ALIUS_MACHINE(2, 9)
++
++static void alius_machine_2_8_options(MachineClass *mc)
++{
++    AliusMachineClass *fmc = ALIUS_MACHINE_CLASS(OBJECT_CLASS(mc));
++
++    alius_machine_2_9_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_8, hw_compat_2_8_len);
++    /* For 2.8 and earlier we falsely claimed in the DT that
++     * our timers were edge-triggered, not level-triggered.
++     */
++    fmc->claim_edge_triggered_timers = true;
++}
++DEFINE_ALIUS_MACHINE(2, 8)
++
++static void alius_machine_2_7_options(MachineClass *mc)
++{
++    AliusMachineClass *fmc = ALIUS_MACHINE_CLASS(OBJECT_CLASS(mc));
++
++    alius_machine_2_8_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_7, hw_compat_2_7_len);
++    /* ITS was introduced with 2.8 */
++    fmc->no_its = true;
++    /* Stick with 1K pages for migration compatibility */
++    mc->minimum_page_bits = 0;
++}
++DEFINE_ALIUS_MACHINE(2, 7)
++
++static void alius_machine_2_6_options(MachineClass *mc)
++{
++    AliusMachineClass *fmc = ALIUS_MACHINE_CLASS(OBJECT_CLASS(mc));
++
++    alius_machine_2_7_options(mc);
++    compat_props_add(mc->compat_props, hw_compat_2_6, hw_compat_2_6_len);
++    fmc->disallow_affinity_adjustment = true;
++    /* Disable PMU for 2.6 as PMU support was first introduced in 2.7 */
++    fmc->no_pmu = true;
++}
++DEFINE_ALIUS_MACHINE(2, 6)
+diff --git a/hw/arm/boot.c b/hw/arm/boot.c
+index cf97600..50f7ec0 100644
+--- a/hw/arm/boot.c
++++ b/hw/arm/boot.c
+@@ -1315,6 +1315,16 @@
+     }
+ }
+ 
++void gic_initialization_workaround(struct arm_boot_info *info)
++{
++    /*
++     * Do GIC initialization workaround registered with
++     * ARMLinuxBootIfClass->arm_linux_init
++     */
++    object_child_foreach_recursive(object_get_root(),
++                                   do_arm_linux_init, info);
++}
++
+ static const TypeInfo arm_linux_boot_if_info = {
+     .name = TYPE_ARM_LINUX_BOOT_IF,
+     .parent = TYPE_INTERFACE,
+diff --git a/hw/arm/meson.build b/hw/arm/meson.build
+index be39117..58962cc 100644
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -56,5 +56,7 @@
+ arm_ss.add(when: 'CONFIG_ARM_SMMUV3', if_true: files('smmu-common.c', 'smmuv3.c'))
+ arm_ss.add(when: 'CONFIG_FSL_IMX6UL', if_true: files('fsl-imx6ul.c', 'mcimx6ul-evk.c'))
+ arm_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_soc.c'))
++arm_ss.add(when: 'CONFIG_ALIUS', if_true: files('alius.c', 'alius-fake-pmc.c'))
++arm_ss.add(when: 'CONFIG_ALIUS_LAS', if_true: files('alius-las.c', 'alius-armsse.c'))
+ 
+ hw_arch += {'arm': arm_ss}
+diff --git a/include/hw/arm/alius-armsse.h b/include/hw/arm/alius-armsse.h
+new file mode 100644
+index 0000000..5994163
+--- /dev/null
++++ b/include/hw/arm/alius-armsse.h
+@@ -0,0 +1,230 @@
++/*
++ * ARM SSE (Subsystems for Embedded): IoTKit, SSE-200
++ *
++ * Copyright (c) 2018 Linaro Limited
++ * Written by Peter Maydell
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++
++/*
++ * This is a model of the Arm "Subsystems for Embedded" family of
++ * hardware, which include the IoT Kit and the SSE-050, SSE-100 and
++ * SSE-200. Currently we model:
++ *  - the Arm IoT Kit which is documented in
++ * http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ecm0601256/index.html
++ *  - the SSE-200 which is documented in
++ * http://infocenter.arm.com/help/topic/com.arm.doc.101104_0100_00_en/corelink_sse200_subsystem_for_embedded_technical_reference_manual_101104_0100_00_en.pdf
++ *
++ * The IoTKit contains:
++ *  a Cortex-M33
++ *  the IDAU
++ *  some timers and watchdogs
++ *  two peripheral protection controllers
++ *  a memory protection controller
++ *  a security controller
++ *  a bus fabric which arranges that some parts of the address
++ *  space are secure and non-secure aliases of each other
++ * The SSE-200 additionally contains:
++ *  a second Cortex-M33
++ *  two Message Handling Units (MHUs)
++ *  an optional CryptoCell (which we do not model)
++ *  more SRAM banks with associated MPCs
++ *  multiple Power Policy Units (PPUs)
++ *  a control interface for an icache for each CPU
++ *  per-CPU identity and control register blocks
++ *
++ * QEMU interface:
++ *  + QOM property "memory" is a MemoryRegion containing the devices provided
++ *    by the board model.
++ *  + QOM property "MAINCLK" is the frequency of the main system clock
++ *  + QOM property "EXP_NUMIRQ" sets the number of expansion interrupts.
++ *    (In hardware, the SSE-200 permits the number of expansion interrupts
++ *    for the two CPUs to be configured separately, but we restrict it to
++ *    being the same for both, to avoid having to have separate Property
++ *    lists for different variants. This restriction can be relaxed later
++ *    if necessary.)
++ *  + QOM property "SRAM_ADDR_WIDTH" sets the number of bits used for the
++ *    address of each SRAM bank (and thus the total amount of internal SRAM)
++ *  + QOM property "init-svtor" sets the initial value of the CPU SVTOR register
++ *    (where it expects to load the PC and SP from the vector table on reset)
++ *  + QOM properties "CPU0_FPU", "CPU0_DSP", "CPU1_FPU" and "CPU1_DSP" which
++ *    set whether the CPUs have the FPU and DSP features present. The default
++ *    (matching the hardware) is that for CPU0 in an IoTKit and CPU1 in an
++ *    SSE-200 both are present; CPU0 in an SSE-200 has neither.
++ *    Since the IoTKit has only one CPU, it does not have the CPU1_* properties.
++ *  + Named GPIO inputs "EXP_IRQ" 0..n are the expansion interrupts for CPU 0,
++ *    which are wired to its NVIC lines 32 .. n+32
++ *  + Named GPIO inputs "EXP_CPU1_IRQ" 0..n are the expansion interrupts for
++ *    CPU 1, which are wired to its NVIC lines 32 .. n+32
++ *  + sysbus MMIO region 0 is the "AHB Slave Expansion" which allows
++ *    bus master devices in the board model to make transactions into
++ *    all the devices and memory areas in the IoTKit
++ * Controlling up to 4 AHB expansion PPBs which a system using the IoTKit
++ * might provide:
++ *  + named GPIO outputs apb_ppcexp{0,1,2,3}_nonsec[0..15]
++ *  + named GPIO outputs apb_ppcexp{0,1,2,3}_ap[0..15]
++ *  + named GPIO outputs apb_ppcexp{0,1,2,3}_irq_enable
++ *  + named GPIO outputs apb_ppcexp{0,1,2,3}_irq_clear
++ *  + named GPIO inputs apb_ppcexp{0,1,2,3}_irq_status
++ * Controlling each of the 4 expansion AHB PPCs which a system using the IoTKit
++ * might provide:
++ *  + named GPIO outputs ahb_ppcexp{0,1,2,3}_nonsec[0..15]
++ *  + named GPIO outputs ahb_ppcexp{0,1,2,3}_ap[0..15]
++ *  + named GPIO outputs ahb_ppcexp{0,1,2,3}_irq_enable
++ *  + named GPIO outputs ahb_ppcexp{0,1,2,3}_irq_clear
++ *  + named GPIO inputs ahb_ppcexp{0,1,2,3}_irq_status
++ * Controlling each of the 16 expansion MPCs which a system using the IoTKit
++ * might provide:
++ *  + named GPIO inputs mpcexp_status[0..15]
++ * Controlling each of the 16 expansion MSCs which a system using the IoTKit
++ * might provide:
++ *  + named GPIO inputs mscexp_status[0..15]
++ *  + named GPIO outputs mscexp_clear[0..15]
++ *  + named GPIO outputs mscexp_ns[0..15]
++ */
++
++#ifndef ARMSSE_H
++#define ARMSSE_H
++
++#include "hw/sysbus.h"
++#include "hw/arm/armv7m.h"
++#include "hw/misc/iotkit-secctl.h"
++#include "hw/misc/tz-ppc.h"
++#include "hw/misc/tz-mpc.h"
++#include "hw/timer/cmsdk-apb-timer.h"
++#include "hw/timer/cmsdk-apb-dualtimer.h"
++#include "hw/watchdog/cmsdk-apb-watchdog.h"
++#include "hw/misc/iotkit-sysctl.h"
++#include "hw/misc/iotkit-sysinfo.h"
++#include "hw/misc/armsse-cpuid.h"
++#include "hw/misc/armsse-mhu.h"
++#include "hw/misc/unimp.h"
++#include "hw/or-irq.h"
++#include "hw/core/split-irq.h"
++#include "hw/cpu/cluster.h"
++#include "qom/object.h"
++
++#define TYPE_ARM_SSE "alius-sse"
++OBJECT_DECLARE_TYPE(ARMSSE, ARMSSEClass,
++                    ARM_SSE)
++
++/*
++ * These type names are for specific IoTKit subsystems; other than
++ * instantiating them, code using these devices should always handle
++ * them via the ARMSSE base class, so they have no IOTKIT() etc macros.
++ */
++#define TYPE_IOTKIT "alius-iotkit"
++#define TYPE_SSE200 "alius-sse-200"
++
++/* We have an IRQ splitter and an OR gate input for each external PPC
++ * and the 2 internal PPCs
++ */
++#define NUM_EXTERNAL_PPCS (IOTS_NUM_AHB_EXP_PPC + IOTS_NUM_APB_EXP_PPC)
++#define NUM_PPCS (NUM_EXTERNAL_PPCS + 2)
++
++#define MAX_SRAM_BANKS 4
++#if MAX_SRAM_BANKS > IOTS_NUM_MPC
++#error Too many SRAM banks
++#endif
++
++#define SSE_MAX_CPUS 2
++
++/* These define what each PPU in the ppu[] index is for */
++#define CPU0CORE_PPU 0
++#define CPU1CORE_PPU 1
++#define DBG_PPU 2
++#define RAM0_PPU 3
++#define RAM1_PPU 4
++#define RAM2_PPU 5
++#define RAM3_PPU 6
++#define NUM_PPUS 7
++
++struct ARMSSE {
++    /*< private >*/
++    SysBusDevice parent_obj;
++
++    /*< public >*/
++    ARMv7MState armv7m[SSE_MAX_CPUS];
++    CPUClusterState cluster[SSE_MAX_CPUS];
++    IoTKitSecCtl secctl;
++    TZPPC apb_ppc0;
++    TZPPC apb_ppc1;
++    TZMPC mpc[IOTS_NUM_MPC];
++    CMSDKAPBTIMER timer0;
++    CMSDKAPBTIMER timer1;
++    CMSDKAPBTIMER s32ktimer;
++    qemu_or_irq ppc_irq_orgate;
++    SplitIRQ sec_resp_splitter;
++    SplitIRQ ppc_irq_splitter[NUM_PPCS];
++    SplitIRQ mpc_irq_splitter[IOTS_NUM_EXP_MPC + IOTS_NUM_MPC];
++    qemu_or_irq mpc_irq_orgate;
++    qemu_or_irq nmi_orgate;
++
++    SplitIRQ cpu_irq_splitter[32];
++
++    CMSDKAPBDualTimer dualtimer;
++
++    CMSDKAPBWatchdog s32kwatchdog;
++    CMSDKAPBWatchdog nswatchdog;
++    CMSDKAPBWatchdog swatchdog;
++
++    IoTKitSysCtl sysctl;
++    IoTKitSysCtl sysinfo;
++
++    ARMSSEMHU mhu[2];
++    UnimplementedDeviceState ppu[NUM_PPUS];
++    UnimplementedDeviceState cachectrl[SSE_MAX_CPUS];
++    UnimplementedDeviceState cpusecctrl[SSE_MAX_CPUS];
++
++    ARMSSECPUID cpuid[SSE_MAX_CPUS];
++
++    /*
++     * 'container' holds all devices seen by all CPUs.
++     * 'cpu_container[i]' is the view that CPU i has: this has the
++     * per-CPU devices of that CPU, plus as the background 'container'
++     * (or an alias of it, since we can only use it directly once).
++     * container_alias[i] is the alias of 'container' used by CPU i+1;
++     * CPU 0 can use 'container' directly.
++     */
++    MemoryRegion container;
++    MemoryRegion container_alias[SSE_MAX_CPUS - 1];
++    MemoryRegion cpu_container[SSE_MAX_CPUS];
++    MemoryRegion alias1;
++    MemoryRegion alias2;
++    MemoryRegion alias3[SSE_MAX_CPUS];
++    MemoryRegion sram[MAX_SRAM_BANKS];
++
++    qemu_irq *exp_irqs[SSE_MAX_CPUS];
++    qemu_irq ppc0_irq;
++    qemu_irq ppc1_irq;
++    qemu_irq sec_resp_cfg;
++    qemu_irq sec_resp_cfg_in;
++    qemu_irq nsc_cfg_in;
++
++    qemu_irq irq_status_in[NUM_EXTERNAL_PPCS];
++    qemu_irq mpcexp_status_in[IOTS_NUM_EXP_MPC];
++
++    uint32_t nsccfg;
++
++    /* Properties */
++    MemoryRegion *board_memory;
++    uint32_t exp_numirq;
++    uint32_t mainclk_frq;
++    uint32_t sram_addr_width;
++    uint32_t init_svtor;
++    bool cpu_fpu[SSE_MAX_CPUS];
++    bool cpu_dsp[SSE_MAX_CPUS];
++};
++
++typedef struct ARMSSEInfo ARMSSEInfo;
++
++struct ARMSSEClass {
++    SysBusDeviceClass parent_class;
++    const ARMSSEInfo *info;
++};
++
++
++#endif
+diff --git a/include/hw/arm/alius-pmc.h b/include/hw/arm/alius-pmc.h
+new file mode 100644
+index 0000000..8bede7d
+--- /dev/null
++++ b/include/hw/arm/alius-pmc.h
+@@ -0,0 +1,29 @@
++/*
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#ifndef ALIUS_PMC_H
++#define ALIUS_PMC_H
++
++#include "hw/sysbus.h"
++#include "qemu/bitops.h"
++
++#define RESET_VECTOR	0
++#define POWER_ON	1
++
++#define TYPE_ALIUS_PMC "alius.pmc"
++#define ALIUS_PMC(obj) OBJECT_CHECK(ALIUSPMCState, (obj), TYPE_ALIUS_PMC)
++
++typedef struct ALIUSPMCState {
++    /* <private> */
++    SysBusDevice parent_obj;
++
++    /* <public> */
++    MemoryRegion iomem;
++
++    uint32_t regs[2];
++
++} ALIUSPMCState;
++
++#endif /* ALIUS_PMC_H */
+diff --git a/include/hw/arm/alius.h b/include/hw/arm/alius.h
+new file mode 100644
+index 0000000..9629dff
+--- /dev/null
++++ b/include/hw/arm/alius.h
+@@ -0,0 +1,170 @@
++/*
++ *
++ * Copyright (c) 2015 Linaro Limited
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ * Emulate a virtual board which works by passing Linux all the information
++ * it needs about what devices are present via the device tree.
++ * There are some restrictions about what we can do here:
++ *  + we can only present devices whose Linux drivers will work based
++ *    purely on the device tree with no platform data at all
++ *  + we want to present a very stripped-down minimalist platform,
++ *    both because this reduces the security attack surface from the guest
++ *    and also because it reduces our exposure to being broken when
++ *    the kernel updates its device tree bindings and requires further
++ *    information in a device binding that we aren't providing.
++ * This is essentially the same approach kvmtool uses.
++ */
++
++#ifndef QEMU_ALIUS_H
++#define QEMU_ALIUS_H
++
++#include "exec/hwaddr.h"
++#include "qemu/notify.h"
++#include "hw/boards.h"
++#include "hw/arm/boot.h"
++#include "hw/block/flash.h"
++#include "sysemu/kvm.h"
++#include "hw/intc/arm_gicv3_common.h"
++
++#define NUM_GICV2M_SPIS       64
++#define NUM_VIRTIO_TRANSPORTS  1
++#define NUM_SMMU_IRQS          4
++
++#define ARCH_GIC_MAINT_IRQ  9
++
++#define ARCH_TIMER_VIRT_IRQ   11
++#define ARCH_TIMER_S_EL1_IRQ  13
++#define ARCH_TIMER_NS_EL1_IRQ 14
++#define ARCH_TIMER_NS_EL2_IRQ 10
++
++#define VIRTUAL_PMU_IRQ 7
++
++#define PPI(irq) ((irq) + 16)
++
++enum {
++    ALIUS_FLASH,
++    ALIUS_DDR0,
++    ALIUS_DDR1,
++    ALIUS_CPUPERIPHS,
++    ALIUS_GIC_DIST,
++    ALIUS_GIC_CPU,
++    ALIUS_GIC_V2M,
++    ALIUS_GIC_HYP,
++    ALIUS_GIC_VCPU,
++    ALIUS_GIC_ITS,
++    ALIUS_GIC_REDIST,
++    ALIUS_SMMU,
++    ALIUS_UART,
++    ALIUS_MMIO,
++    ALIUS_RTC,
++    ALIUS_FW_CFG,
++    ALIUS_BOOT_CFG,
++    ALIUS_PCIE,
++    ALIUS_PCIE_MMIO,
++    ALIUS_PCIE_PIO,
++    ALIUS_PCIE_ECAM,
++    ALIUS_PLATFORM_BUS,
++    ALIUS_GPIO,
++    ALIUS_SECURE_UART,
++    ALIUS_SECURE_MEM,
++    ALIUS_SRAM0,
++    ALIUS_SRAM1,
++    ALIUS_FAKE_FLASH,
++    ALIUS_FAKE_FLASH1,
++    ALIUS_SDHCI,
++    ALIUS_NIC,
++    ALIUS_CMN,
++    ALIUS_PMC,
++    ALIUS_FLC,
++    ALIUS_LOWMEMMAP_LAST,
++};
++
++/* indices of IO regions located after the RAM */
++enum {
++    ALIUS_HIGH_GIC_REDIST2 =  ALIUS_LOWMEMMAP_LAST,
++    ALIUS_HIGH_PCIE_ECAM,
++    ALIUS_HIGH_PCIE_MMIO,
++};
++
++typedef enum VirtIOMMUType {
++    ALIUS_IOMMU_NONE,
++    ALIUS_IOMMU_SMMUV3,
++    ALIUS_IOMMU_VIRTIO,
++} AliusIOMMUType;
++
++typedef struct {
++    MachineClass parent;
++    bool disallow_affinity_adjustment;
++    bool no_its;
++    bool no_pmu;
++    bool claim_edge_triggered_timers;
++    bool smbios_old_sys_ver;
++    bool no_highmem_ecam;
++} AliusMachineClass;
++
++typedef struct {
++    MachineState parent;
++    Notifier machine_done;
++    DeviceState *platform_bus_dev;
++    FWCfgState *fw_cfg;
++    PFlashCFI01 *flash[2];
++    bool secure;
++    bool psci;
++    bool hetero;
++    bool gic_wa;
++    bool highmem;
++    bool highmem_ecam;
++    bool its;
++    bool virt;
++    int32_t gic_version;
++    AliusIOMMUType iommu;
++    struct arm_boot_info bootinfo;
++    MemMapEntry *memmap;
++    const int *irqmap;
++    int smp_cpus;
++    void *fdt;
++    int fdt_size;
++    uint32_t clock_phandle;
++    uint32_t gic_phandle;
++    uint32_t msi_phandle;
++    uint32_t iommu_phandle;
++    int psci_conduit;
++    hwaddr highest_gpa;
++} AliusMachineState;
++
++#define ALIUS_ECAM_ID(high) (high ? ALIUS_HIGH_PCIE_ECAM : ALIUS_PCIE_ECAM)
++
++#define TYPE_ALIUS_MACHINE   MACHINE_TYPE_NAME("alius")
++#define ALIUS_MACHINE(obj) \
++    OBJECT_CHECK(AliusMachineState, (obj), TYPE_ALIUS_MACHINE)
++#define ALIUS_MACHINE_GET_CLASS(obj) \
++    OBJECT_GET_CLASS(AliusMachineClass, obj, TYPE_ALIUS_MACHINE)
++#define ALIUS_MACHINE_CLASS(klass) \
++    OBJECT_CLASS_CHECK(AliusMachineClass, klass, TYPE_ALIUS_MACHINE)
++
++void alius_acpi_setup(AliusMachineState *fms);
++
++/* Return the number of used redistributor regions  */
++static inline int alius_gicv3_redist_region_count(AliusMachineState *fms)
++{
++    uint32_t redist0_capacity =
++                fms->memmap[ALIUS_GIC_REDIST].size / GICV3_REDIST_SIZE;
++
++    assert(fms->gic_version == 3);
++
++    return fms->smp_cpus > redist0_capacity ? 2 : 1;
++}
++
++#endif /* QEMU_ALIUS_H */
+diff --git a/include/hw/arm/boot.h b/include/hw/arm/boot.h
+index ce2b48b..57e197d 100644
+--- a/include/hw/arm/boot.h
++++ b/include/hw/arm/boot.h
+@@ -168,4 +168,6 @@
+                                             const struct arm_boot_info *info,
+                                             hwaddr mvbar_addr);
+ 
++void gic_initialization_workaround(struct arm_boot_info *info);
++
+ #endif /* HW_ARM_BOOT_H */
