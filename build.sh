@@ -534,7 +534,8 @@ function do_get_alius_csd()
     
     # Patch
     patch -d "${alius_csd_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_qemu.diff
-    patch -d "${alius_csd_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_freertos.diff
+    patch -d "${alius_csd_dir}"/freertos -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_freertos.diff
+    patch -d "${alius_csd_dir}"/baremetal-m33 -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_baremetal-m33.diff
 
     # Build qemu
     #git fetch "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/github/qemu/qemu" refs/changes/48/7848/3 && git cherry-pick FETCH_HEAD
@@ -550,6 +551,11 @@ function do_get_alius_csd()
     cp "${shell_folder}"/modules/alius_csd/alius_csd_build_m33.sh  "${alius_csd_dir}"/build_m33.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu_m33.sh  "${alius_csd_dir}"/runqemu_m33.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_m33.sh  "${alius_csd_dir}"/rungdb_m33.sh
+
+    # Create M33 baremetal build.sh runqemu.sh rungdb.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_build_m33_bm.sh  "${alius_csd_dir}"/build_m33_bm.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu_m33_bm.sh  "${alius_csd_dir}"/runqemu_m33_bm.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_m33_bm.sh  "${alius_csd_dir}"/rungdb_m33_bm.sh
 }
 
 

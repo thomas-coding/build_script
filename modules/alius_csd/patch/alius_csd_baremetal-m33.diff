@@ -1,0 +1,21 @@
+diff --git a/build.sh b/build.sh
+index c1c97a2..efcf4d4 100755
+--- a/build.sh
++++ b/build.sh
+@@ -15,12 +15,12 @@ export APP_S="alius-bm-s.elf"
+ export APP_NS="alius-bm-ns.elf"
+ 
+ # Testing with cm33 bootrom
+-export CONFIG_SRAM_S_BASE=0x20420000
+-export CONFIG_SRAM_S_SIZE=0x00020000
++#export CONFIG_SRAM_S_BASE=0x20420000
++#export CONFIG_SRAM_S_SIZE=0x00020000
+ 
+ # Testing without cm33 bootrom
+-#export CONFIG_SRAM_S_BASE=0x20400000
+-#export CONFIG_SRAM_S_SIZE=0x00020000
++export CONFIG_SRAM_S_BASE=0x20400000
++export CONFIG_SRAM_S_SIZE=0x00020000
+ 
+ export CONFIG_SRAM_NS_BASE=0x20440000
+ export CONFIG_SRAM_NS_SIZE=0x001be000
