@@ -504,7 +504,7 @@ function do_get_alius_csd()
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/trusted-firmware-a"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/linux"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/ipd-release"
-    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/freertos"
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/freertos" --recurse-submodules
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m33"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-m0plus"
     git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/alius/baremetal-a32"
@@ -523,7 +523,7 @@ function do_get_alius_csd()
     cd "${alius_csd_dir}/linux" || exit
     git checkout  origin/alius-fpga
 
-    cd "${alius_csd_dir}/linux" || exit
+    cd "${alius_csd_dir}/freertos" || exit
     git checkout  origin/alius-fpag-vsi-m33
 
     # Get qemu v5.2.0, patch alius machine, build 
@@ -532,16 +532,24 @@ function do_get_alius_csd()
     git submodule init
     git submodule update --recursive
     
-    # Patch for alius machine
+    # Patch
     patch -d "${alius_csd_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_qemu.diff
+    patch -d "${alius_csd_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_csd/patch/alius_csd_freertos.diff
+
+    # Build qemu
     #git fetch "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/github/qemu/qemu" refs/changes/48/7848/3 && git cherry-pick FETCH_HEAD
     ./configure --target-list=arm-softmmu --enable-debug
     make -j "$(nproc)"
 
-    # Creat build.sh runqemu.sh rungdb.sh
+    # Create build.sh runqemu.sh rungdb.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_build.sh  "${alius_csd_dir}"/build.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu.sh  "${alius_csd_dir}"/runqemu.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb.sh  "${alius_csd_dir}"/rungdb.sh
+
+    # Create M33 TFM and Freertos build.sh runqemu.sh rungdb.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_build_m33.sh  "${alius_csd_dir}"/build_m33.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu_m33.sh  "${alius_csd_dir}"/runqemu_m33.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_m33.sh  "${alius_csd_dir}"/rungdb_m33.sh
 }
 
 

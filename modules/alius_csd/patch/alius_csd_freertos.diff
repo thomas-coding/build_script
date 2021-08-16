@@ -1,0 +1,13 @@
+diff --git a/build.sh b/build.sh
+index b1e6f3ad9..f8ec13177 100755
+--- a/build.sh
++++ b/build.sh
+@@ -17,7 +17,7 @@ export APP="alius_cm33_fr.elf"
+ export CONFIG_SRAM_NS_BASE=0x20500000
+ export CONFIG_SRAM_NS_SIZE=0x00080000
+ 
+-export TFM_EXPORT_DIR=/data/zhigang/projects/Alius/code/TFM/trusted-firmware-m/cmake_build/install/interface
++export TFM_EXPORT_DIR=/home/cn1396/workspace/code/alius_csd/trusted-firmware-m/cmake_build/install/interface
+ 
+ export CROSS_COMPILE="arm-none-eabi-"
+ 
