@@ -487,6 +487,10 @@ function do_get_and_build_alius()
 
     # Creat build.sh
     cp "${shell_folder}"/modules/alius/alius_build.sh  "${alius_dir}"/build.sh
+    cp "${shell_folder}"/modules/alius/alius_build_m33.sh  "${alius_dir}"/build_m33.sh
+    cp "${shell_folder}"/modules/alius/alius_runqemu_m33.sh  "${alius_dir}"/runqemu_m33.sh
+    cp "${shell_folder}"/modules/alius/alius_rungdb_m33.sh  "${alius_dir}"/rungdb_m33.sh
+
 }
 
 function do_get_alius_csd()
