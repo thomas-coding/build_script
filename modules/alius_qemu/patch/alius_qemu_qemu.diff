@@ -1,0 +1,58 @@
+From 89b7206b39a0e2598b51c0311d37406d45af0cdf Mon Sep 17 00:00:00 2001
+From: Cheng Wei <Wei.Cheng@verisilicon.com>
+Date: Mon, 23 Aug 2021 10:33:36 +0800
+Subject: [PATCH] for spsd code base
+
+---
+ hw/arm/alius.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/hw/arm/alius.c b/hw/arm/alius.c
+index 9149d5aa7a..7b90ed697f 100644
+--- a/hw/arm/alius.c
++++ b/hw/arm/alius.c
+@@ -118,8 +118,8 @@
+ static const MemMapEntry base_memmap[] = {
+     /* Space up to 0x8000000 is reserved for a boot ROM */
+     [ALIUS_FLASH] =              { 0x00000000, 0x20000 },
+-    [ALIUS_SRAM0] =              { 0x90000000, 0x400000},
+-    [ALIUS_SRAM1] =              { 0x90400000, 0x400000},
++    [ALIUS_SRAM0] =              { 0x30000000, 0x400000},
++    [ALIUS_SRAM1] =              { 0x30400000, 0x400000},
+     [ALIUS_PMC]   =              { 0x02000000, 0x1000 },
+     [ALIUS_FAKE_FLASH] =         { 0x00800000, 0x200000 },
+     [ALIUS_DDR0] =               { 0x40000000, 0x40000000 },
+@@ -173,7 +173,7 @@ static MemMapEntry extended_memmap[] = {
+ };
+ 
+ static const int a15irqmap[] = {
+-    [ALIUS_UART] = 5,
++    [ALIUS_UART] = 6,
+     [ALIUS_RTC] = 2,
+     [ALIUS_PCIE] = 3, /* ... to 6 */
+     [ALIUS_SDHCI] = 125,
+@@ -913,6 +913,7 @@ static void machalius_init(MachineState *machine)
+     MemoryRegion *sram1 = g_new(MemoryRegion, 1);
+     MemoryRegion *fake_flash = g_new(MemoryRegion, 1);
+     MemoryRegion *ddr0 = g_new(MemoryRegion, 1);
++    MemoryRegion *uart = g_new(MemoryRegion, 1);
+  
+     /* const char compat[] = "arm,pl061\0arm,primecell"; luke */
+     bool firmware_loaded;
+@@ -1138,6 +1139,13 @@ static void machalius_init(MachineState *machine)
+ 
+     create_gic(fms, pic);
+ 
++    memory_region_init_ram(uart, NULL,
++                            "mach-alius.uart",
++                            fms->memmap[ALIUS_UART].size,
++                            &error_fatal);
++    memory_region_add_subregion(sysmem, fms->memmap[ALIUS_UART].base,
++    					 uart);
++
+     create_uart(fms, pic, ALIUS_UART, sysmem, serial_hd(0));
+ 
+     if (fms->secure) {
+-- 
+2.17.1
+

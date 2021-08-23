@@ -1,0 +1,14 @@
+diff --git a/platform/alius/config b/platform/alius/config
+index e64eb3f..9001973 100755
+--- a/platform/alius/config
++++ b/platform/alius/config
+@@ -36,7 +36,8 @@ export atf_home=${build_home}/../atf
+ export atf_platform=alius
+ export atf_build_opt="PLAT=${atf_platform} "\
+ "ARCH=aarch32 AARCH32_SP=sp_min "\
+-"INC_ACS_DOMAIN=0 BUILD_ACS_DOMAIN=0 FPGA_PLAT=1 INC_RECOVERY_FW=0 RECOVERY_FW=0 "\
++"INC_ACS_DOMAIN=0 BUILD_ACS_DOMAIN=0 QEMU_PLAT=1 INC_RECOVERY_FW=0 RECOVERY_FW=0 "\
++"TINY_CONSOLE_SUPPORT=1 "\
+ "BL33=${out}/u-boot.bin all fip"
+ 
+ export atf_out_bins="bl1.bin fip.bin"

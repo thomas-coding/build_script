@@ -34,6 +34,7 @@ nxp865_dir=${code_dir}/nxp865
 falcon_qemu_coreboot_dir=${code_dir}/falcon_qemu_coreboot
 falcon_qemu_uboot_dir=${code_dir}/falcon_qemu_uboot
 alius_dir=${code_dir}/alius
+alius_qemu_dir=${code_dir}/alius_qemu
 alius_csd_dir=${code_dir}/alius_csd
 
 os_version=unknow
@@ -562,6 +563,45 @@ function do_get_alius_csd()
     cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_m33_bm.sh  "${alius_csd_dir}"/rungdb_m33_bm.sh
 }
 
+function do_get_alius_qemu()
+{
+    if [[ -d ${alius_qemu_dir} ]]; then
+        echo "alius qemu already exist ..."
+        return
+    fi
+
+    # Downlaod code base
+    mkdir -p "${alius_qemu_dir}"
+    cd "${alius_qemu_dir}" || exit
+    repo init -u ssh://gerrit-spsd.verisilicon.com:29418/manifest --repo-url=ssh://gerrit-spsd.verisilicon.com:29418/git-repo -b spsd/master -m Alius/linuxsdk.xml
+    repo sync -j4 -c
+
+    # Install qemu
+    cd "${alius_qemu_dir}"|| exit
+    git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/gitlab/qemu/qemu"
+    cd "${alius_qemu_dir}"/qemu || exit
+    git checkout -b my_branch origin/alius
+    patch -d "${alius_qemu_dir}"/qemu -p1 < "${shell_folder}"/modules/alius_qemu/patch/alius_qemu_qemu.diff
+    ./configure --target-list=arm-softmmu --enable-debug
+    make -j8
+
+    # Patch ATF and Build
+    patch -d "${alius_qemu_dir}"/build -p1 < "${shell_folder}"/modules/alius_qemu/patch/alius_qemu_build.diff
+    patch -d "${alius_qemu_dir}"/atf -p1 < "${shell_folder}"/modules/alius_qemu/patch/alius_qemu_atf.diff
+
+    # Build
+    cd "${alius_qemu_dir}"/build || exit
+    ./build.sh alius
+
+    # Creat build.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_build.sh  "${alius_qemu_dir}"/build.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_build_m33.sh  "${alius_qemu_dir}"/build_m33.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_runqemu_m33.sh  "${alius_qemu_dir}"/runqemu_m33.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_rungdb_m33.sh  "${alius_qemu_dir}"/rungdb_m33.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_runqemu_a32.sh  "${alius_qemu_dir}"/runqemu_a32.sh
+    cp "${shell_folder}"/modules/alius_qemu/alius_qemu_rungdb_a32.sh  "${alius_qemu_dir}"/rungdb_a32.sh
+
+}
 
 function do_create_git_repository()
 {
@@ -703,6 +743,9 @@ for arg in "$@"; do
             shift;;
         --alius_csd)
             do_get_alius_csd
+            shift;;
+        --alius_qemu)
+            do_get_alius_qemu
             shift;;
         --git)
             do_create_git_repository

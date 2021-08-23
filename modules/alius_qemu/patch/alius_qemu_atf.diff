@@ -1,0 +1,24 @@
+From 12a01b34b79d38b5443530ca5436dcb153ef91b9 Mon Sep 17 00:00:00 2001
+From: Cheng Wei <Wei.Cheng@verisilicon.com>
+Date: Mon, 23 Aug 2021 10:47:22 +0800
+Subject: [PATCH] atf:for QEMU
+
+---
+ plat/google/alius/alius_bl1_setup.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/plat/google/alius/alius_bl1_setup.c b/plat/google/alius/alius_bl1_setup.c
+index 0c193e8e4..4479d73df 100644
+--- a/plat/google/alius/alius_bl1_setup.c
++++ b/plat/google/alius/alius_bl1_setup.c
+@@ -90,6 +90,7 @@ void bl1_early_platform_setup(void)
+ #if FPGA_PLAT
+ 	alius_fpga_plat_init();
+ #endif
++	mmio_write_32(PLAT_ALIUS_BOOT_MODE_REG, BOOT_MODE_MEMORY);
+ 	alius_generic_timer_init();
+ 
+ 	alius_console_init();
+-- 
+2.17.1
+
