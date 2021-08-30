@@ -516,6 +516,10 @@ function do_get_alius_csd()
     #git clone "ssh://cn1396@gerrit-spsd.verisilicon.com:29418/github/qemu/qemu"
     git clone https://gitlab.com/qemu-project/qemu.git
 
+    cd "${alius_csd_dir}/baremetal-a32" || exit
+    #git log --until=2021-08-18
+    git checkout 5752930b0a73198ca491154aaf703a2f20d65041
+
     cd "${alius_csd_dir}/u-boot" || exit
     git checkout origin/alius-fpga
 
@@ -561,6 +565,11 @@ function do_get_alius_csd()
     cp "${shell_folder}"/modules/alius_csd/alius_csd_build_m33_bm.sh  "${alius_csd_dir}"/build_m33_bm.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu_m33_bm.sh  "${alius_csd_dir}"/runqemu_m33_bm.sh
     cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_m33_bm.sh  "${alius_csd_dir}"/rungdb_m33_bm.sh
+
+
+    # Create a32 baremetal build.sh runqemu.sh rungdb.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_runqemu_a32_bm.sh  "${alius_csd_dir}"/runqemu_a32_bm.sh
+    cp "${shell_folder}"/modules/alius_csd/alius_csd_rungdb_a32_bm.sh  "${alius_csd_dir}"/rungdb_a32_bm.sh
 }
 
 function do_get_alius_qemu()
