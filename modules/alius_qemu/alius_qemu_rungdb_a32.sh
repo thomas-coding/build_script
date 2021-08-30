@@ -38,7 +38,7 @@ function get_and_export_toolchain()
 get_and_export_toolchain
 
 # gdb
-arm-none-eabi-gdb ${shell_folder}/atf/build/alius/debug/bl1.bin \
+arm-none-eabi-gdb ${shell_folder}/atf/build/alius/release/bl1/bl1.elf \
 -ex 'target remote localhost:1234' \
 -ex "restore atf/build/alius/release/fip.bin binary 0x30200000" \
 -q
