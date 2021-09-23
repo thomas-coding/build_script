@@ -698,7 +698,7 @@ for arg in "$@"; do
             do_test
             shift;;
         --a)
-            do_add_swap
+            #do_add_swap
             do_install_package
             do_install_qemu
             do_install_toolchain
@@ -712,7 +712,7 @@ for arg in "$@"; do
             do_get_and_build_nxp865_freertos_optee
             shift;;
         --env)
-            do_add_swap
+            #do_add_swap
             do_install_package
             do_install_toolchain
             do_install_cmake
