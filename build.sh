@@ -646,6 +646,13 @@ function do_install_vnc_server()
     vncserver
 }
 
+function do_install_vpn_server()
+{
+    cd modules/vpn
+    chmod +x pptpd_vpn.sh
+    ./pptpd_vpn.sh
+}
+
 function usage()
 {
     echo "build <option>"
@@ -764,6 +771,9 @@ for arg in "$@"; do
             shift;;
         --vnc)
             do_install_vnc_server
+            shift;;
+        --vpn)
+            do_install_vpn_server
             shift;;
         -h|--help)
             usage
