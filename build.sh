@@ -322,7 +322,7 @@ function do_get_and_build_optee_armv7()
 
     # Patch
     # Patch from git dir run 'git diff > xxx.diff'
-    patch -d "${optee_armv7_dir}"/build -p1 < "${shell_folder}"/modules/opteev7/patch/build.diff
+    patch -d "${optee_armv7_dir}"/build -p1 < "${shell_folder}"/modules/opteev7/patch/optee_build.diff
     patch -d "${optee_armv7_dir}"/optee_client -p1 < "${shell_folder}"/modules/opteev7/patch/optee_client.diff
     patch -d "${optee_armv7_dir}"/optee_os -p1 < "${shell_folder}"/modules/opteev7/patch/optee_os.diff
     patch -d "${optee_armv7_dir}"/trusted-firmware-a -p1 < "${shell_folder}"/modules/opteev7/patch/trusted-firmware-a.diff
