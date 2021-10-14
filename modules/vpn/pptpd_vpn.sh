@@ -3,7 +3,7 @@
 sudo apt-get install -y pptpd iptables
 
 # pptpd configure
-cat >>/etc/sysctl.conf<<EOF
+cat >>/etc/pptpd.conf<<EOF
 localip 172.26.218.18
 remoteip 192.168.100.1-100
 EOF
