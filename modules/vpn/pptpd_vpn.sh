@@ -17,6 +17,7 @@ EOF
 # username and password configure
 cat >>/etc/ppp/chap-secrets<<EOF
 aliyun  pptpd   123456  *
+test  pptpd   123456  *
 EOF
 
 # ip forword configure
