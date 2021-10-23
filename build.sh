@@ -207,6 +207,7 @@ function do_get_and_build_tfm()
     fi
 
     cd "${code_dir}" || exit
+    export GIT_SSL_NO_VERIFY=1
     git clone --branch TF-Mv1.3.0 https://git.trustedfirmware.org/TF-M/trusted-firmware-m.git
     python3 -m pip install "pip>=21.1.1"
     cd "${tfm_dir}" || exit
