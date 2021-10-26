@@ -161,7 +161,7 @@ function do_install_toolchain()
     fi
 
     #delete tar file
-    rm -rf ./*.tar.bz*
+    rm -rf ./*.tar.bz* ./*.tar.xz*
 }
 
 function do_install_cmake()
