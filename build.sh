@@ -145,14 +145,9 @@ function do_install_toolchain()
 
     cd "${toolchains_dir}" || exit
 
-    if [[ ! -d gcc-arm-none-eabi-10-2020-q4-major ]]; then
-        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-        tar -xvf gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
-    fi
-
-    if [[ ! -d gcc-arm-none-eabi-9-2019-q4-major ]]; then
-        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-rm/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
-        tar -xvf gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
+    if [[ ! -d gcc-arm-none-eabi-10.3-2021.10 ]]; then
+        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2
+        tar -xvf gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2
     fi
 
     if [[ ! -d gcc-arm-10.3-2021.07-x86_64-arm-none-eabi ]]; then
