@@ -155,6 +155,10 @@ function do_install_toolchain()
         tar -xvf gcc-arm-10.3-2021.07-x86_64-arm-none-eabi.tar.xz
     fi
 
+    if [[ ! -d gcc-arm-10.3-2021.07-x86_64-aarch64-none-elf ]]; then
+        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-elf.tar.xz
+        tar -xvf gcc-arm-10.3-2021.07-x86_64-aarch64-none-elf.tar.xz
+    fi
     #delete tar file
     rm -rf ./*.tar.bz* ./*.tar.xz*
 }
