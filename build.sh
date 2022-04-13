@@ -693,6 +693,9 @@ function do_test()
 # prebuild
 check_os_version
 
+# No verify ssl cert
+export GIT_SSL_NO_VERIFY=1
+
 #parse option
 start_time=${SECONDS}
 module=
