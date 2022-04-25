@@ -150,6 +150,11 @@ function do_install_toolchain()
         tar -xvf gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2
     fi
 
+    if [[ ! -d gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf ]]; then
+        wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf.tar.xz
+        tar -xvf gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf.tar.xz
+    fi
+
     if [[ ! -d gcc-arm-10.3-2021.07-x86_64-arm-none-eabi ]]; then
         wget --directory-prefix="${toolchains_dir}" https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-arm-none-eabi.tar.xz
         tar -xvf gcc-arm-10.3-2021.07-x86_64-arm-none-eabi.tar.xz
