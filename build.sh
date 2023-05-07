@@ -47,6 +47,9 @@ function check_os_version()
     elif grep -Eqi "Ubuntu 18." /etc/issue; then
         echo "os ubuntu 18"
         os_version=ubuntu18
+    elif grep -Eqi "Ubuntu 22." /etc/issue; then
+        echo "os ubuntu 22"
+        os_version=ubuntu22
     fi
 }
 
@@ -110,6 +113,23 @@ function do_install_package()
         libpixman-1-dev libstdc++-8-dev pkg-config libglib2.0-dev libusb-1.0-0-dev \
         libssl-dev bison gcc-multilib zip openssh-server openssh-client apache2
         #echo "y" | sudo apt-get install git
+    elif [[ "${os_version}" = "ubuntu22" ]]; then
+        # install package
+        echo "ubuntu22 install package ..."
+        # For repo init
+        sudo apt-get -y install python-is-python3
+        # For qemu
+        sudo apt-get -y install ninja-build pkgconf libglib2.0-dev libpixman-1-dev
+        # For linux kernel
+        sudo apt-get -y install flex bison
+        # For optee
+        sudo apt-get -y install python3-pyelftools
+        # For uboot
+        sudo apt-get -y install libssl-dev
+        # For buildroot
+        sudo apt-get -y install unzip
+        # For gdb
+        sudo apt-get -y install libncursesw5 libpython2.7
     fi
 
     # config git
